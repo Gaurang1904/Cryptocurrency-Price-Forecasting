@@ -1,0 +1,19 @@
+# Ignore data files
+*.csv
+*.xlsx
+
+# Ignore Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Ignore virtual environments
+.venv/
+env/
+
+# Ignore system/IDE files
+.DS_Store
+Thumbs.db
+*.log
+.vscode/
