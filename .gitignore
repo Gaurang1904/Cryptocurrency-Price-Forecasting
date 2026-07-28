@@ -1,6 +1,12 @@
 # Ignore data files
 *.csv
 *.xlsx
+*.parquet
+data/
+models/
+
+# ...but the experiment log is the record, keep it
+!results.csv
 
 # Ignore Python cache
 __pycache__/
@@ -17,3 +23,5 @@ env/
 Thumbs.db
 *.log
 .vscode/
+plots/
+report_by_coin.csv

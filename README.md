@@ -1,91 +1,136 @@
-# Prediction Model
+# 7-Day Crypto Volatility Forecasting
 
-This repository contains Python scripts and feature engineering workflows for building and evaluating prediction models on cryptocurrency/financial datasets.  
-The focus is on preparing data, engineering features, training multiple models, and comparing their performance.
+Predicts the **distribution** of where a coin's price lands over the next 7 days,
+not a single number. Output looks like:
+
+```
+asset      last  vol_pred_%       q10       q50       q90  band_%
+BTC    65098.97      1.83     60510.73  64858.48  69070.91   13.15
+```
+
+Read as: median 64,858, and an 80% chance BTC finishes between 60,511 and 69,071.
+
+Trained on 5 assets (BTC, ETH, BNB, SOL, XRP), ~15k daily bars, 2017-2026. Every
+number below is measured by walk-forward backtest across ~1,400+ out-of-sample
+origins, logged to `results.csv`.
 
 ---
 
-## 📂 Project Structure
+## Why intervals, not a price
 
-```
-.
-├── Data_preparation.py   # Scripts for cleaning and preparing datasets
-├── FE.py                 # Feature engineering utilities
-├── data.py               # Data loading functions
-├── merger.py             # Dataset merging and handling
-├── model.py              # Core model training & evaluation
-├── model2.py             # Alternative model experiments
-├── model3.py             # Extended model variations
-├── model4.py             # Additional experiments
-├── hello.py              # Test script / basic run
-└── .gitignore            # Excluded files and directories
-```
+Three questions, each tested against a dumb baseline before any model was trusted:
+
+| question | answer | where |
+|---|---|---|
+| Predict direction? | **No.** 49-52% accuracy, inside noise. | `experiments/point_lgbm.py` |
+| Predict the price level? | **No.** LightGBM, XGBoost, ARIMA, SARIMA, Linear Regression all lost to `flat`. | `experiments/baselines.py`, `experiments/classical_price.py` |
+| Predict volatility? | **Yes.** Every model beats the 21-day rolling average at all 7 horizons. | `tree.run`, `neural.run` |
+
+So the models predict volatility, and an empirically calibrated quantile table
+turns that into a price interval. Coverage lands near the 80% target.
 
 ---
 
-## ⚙️ Requirements
+## Results (deployable models, ~1,400 origins)
 
-Install dependencies with:
+| model | family | pinball | coverage (target 80) |
+|---|---|---|---|
+| lstm | neural | 162.97 | 80.0 |
+| dlinear | neural | 163.22 | 79.7 |
+| xgb | tree | 166.98 | 79.0 |
+| lgbm | tree | 167.92 | 78.7 |
+
+Neural (sequence input) edges the trees (engineered features) by ~3% - small, and
+DLinear ≈ LSTM, so the gain is the sequence representation, not depth. All four are
+near-interchangeable; the ceiling is the data, not the model.
+
+The linear family (Ridge, HAR-RV, GARCH) and classical price models (ARIMA, SARIMA)
+are backtested for comparison but not deployed - they refit per series on demand.
+
+---
+
+## Layout
+
+```
+crypto/        shared: data fetch, features, backtest, calibration, plots, train
+tree/          LightGBM, XGBoost      (adapter = raw features)
+linear/        Ridge, HAR-RV, GARCH   (adapter = scale + clip)
+neural/        DLinear, LSTM          (adapter = 30-day sequence windows)
+experiments/   baselines, model_zoo, classical_price
+data/          raw parquet (gitignored, rebuildable)
+models/        trained artifacts (gitignored, rebuildable)
+results.csv    every backtest score (committed)
+```
+
+Feature CONTENT is shared in `crypto/features.py`; each family folder holds only
+its input adapter. Same features, three formats - no duplicated logic. Adding a
+model is one file named after it (e.g. `tree/xgb.py`).
+
+---
+
+## Usage
 
 ```bash
-pip install -r requirements.txt
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+
+.\.venv\Scripts\python.exe fetch.py        # pull OHLCV + funding + open interest
+
+# backtest a whole family (scores -> results.csv)
+.\.venv\Scripts\python.exe -m tree.run
+.\.venv\Scripts\python.exe -m linear.run
+.\.venv\Scripts\python.exe -m neural.run
+
+# train + save + plot one model (artifact -> models/, svg -> plots/)
+.\.venv\Scripts\python.exe -m tree.lgbm
+.\.venv\Scripts\python.exe -m tree.xgb
+.\.venv\Scripts\python.exe -m neural.dlinear
+.\.venv\Scripts\python.exe -m neural.lstm
+
+# forecast the next 7 days from any saved model
+.\.venv\Scripts\python.exe predict.py --model lstm
+.\.venv\Scripts\python.exe predict.py --model xgb --asset BTC --horizon 4
 ```
 
-Typical libraries used:
-- `pandas`
-- `numpy`
-- `matplotlib`
-- `seaborn`
-- `scikit-learn`
-- `neuralforecast`
+Change the coin universe in `crypto/data.py` (`ASSETS`), then re-fetch and retrain.
 
 ---
 
-## 🚀 Usage
+## The model
 
-1. **Prepare the data**
-   ```bash
-   python Data_preparation.py
-   ```
+```
+sigma       = model(features)                    -> predicted daily volatility
+price[q, h] = last * exp( z[h][q] * sigma * sqrt(h) )
+```
 
-2. **Run feature engineering**
-   ```bash
-   python FE.py
-   ```
+`z` is a 7x3 table of **empirical** quantiles of standardised h-day returns, fit on
+a held-out slice of training data. It replaces the normal distribution and shows
+what the data actually does:
 
-3. **Train and evaluate a model**
-   ```bash
-   python model.py
-   ```
-
-4. **Experiment with other models**
-   ```bash
-   python model2.py
-   python model3.py
-   python model4.py
-   ```
+- `|z10| > |z90|` at every horizon - the left tail is fatter. Crashes outrun rallies.
+- `|z|` shrinks from ~2.7 (h=1) to ~1.4 (h=7) - `sqrt(h)` alone overstates the spread.
 
 ---
 
-## 📊 Features
+## Rules this repo enforces
 
-- Data cleaning and preprocessing  
-- Feature engineering for time series/financial data  
-- Multiple predictive models (baseline + experimental)  
-- Evaluation metrics:  
-  - Mean Absolute Percentage Error (MAPE)  
-  - Directional Accuracy  
-
----
-
-## 🔮 Future Improvements
-
-- Add support for deep learning models (RNNs, LSTMs, Transformers)  
-- Automate hyperparameter tuning  
-- Extend evaluation to more asset classes  
+1. **Baseline first.** No model ships without beating flat / drift / seasonal.
+2. **Features are causal.** `check_causal()` runs before every training job: corrupt
+   the last 200 bars, rebuild, assert nothing earlier moved.
+3. **Targets are never features.** The original code fed `target_return_1h` (next-day
+   data) into the model, invalidating every metric it produced.
+4. **Calibration is a model too.** It gets its own holdout. Fitting the quantile table
+   in-sample dropped coverage from 80% to 64%.
+5. **Walk-forward, never a single split.** One 80/20 cut tests one market regime.
 
 ---
 
-## 📄 License
+## Known limits
 
-This project is licensed under the MIT License.
+- `data/open_interest.parquet` accumulates daily and **cannot be backfilled** -
+  Binance serves ~30 days. Do not delete it; back it up outside the repo.
+- Coverage runs ~1-2pp light on some models (78-79 vs 80). Fixable with a widening
+  factor; not applied yet.
+- Transformers (N-HiTS, TFT) are not built. Expected to need hourly data to compete;
+  a prediction, not a measurement.
+- Plots are hand-rolled SVG (no matplotlib), avoiding a native-DLL dependency.
