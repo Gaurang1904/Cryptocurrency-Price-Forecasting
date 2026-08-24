@@ -119,6 +119,31 @@ def coverage_by_h(res):
                .pivot_table(index="model", columns="h", values="hit") * 100)
 
 
+def point_metrics(res):
+    """Median-forecast metrics. R2 is computed on RETURNS, never price.
+
+    R2 on price is a vanity 0.99 (price barely moves bar-to-bar, so 'predict last'
+    already explains ~all variance). On returns it is honest - and will sit near
+    0, which is the true signal. MAE/RMSE are in price units so they mix scales
+    across coins; read MAPE / R2_ret / DirAcc for the cross-coin comparison.
+    """
+    rows = []
+    for model, g in res.groupby("model"):
+        a, p, last = g.y.to_numpy(), g.q50.to_numpy(), g["last"].to_numpy()
+        ar, pr = a / last - 1, p / last - 1                 # actual vs predicted return
+        ss_res, ss_tot = np.sum((ar - pr) ** 2), np.sum((ar - ar.mean()) ** 2)
+        end = g[g.h == g.h.max()]                           # cumulative-move direction
+        rows.append({
+            "model": model,
+            "MAE": np.mean(np.abs(a - p)),
+            "RMSE": np.sqrt(np.mean((a - p) ** 2)),
+            "MAPE": np.mean(np.abs(a - p) / a) * 100,
+            "R2_ret": 1 - ss_res / ss_tot if ss_tot > 0 else np.nan,
+            "DirAcc": (np.sign(end.q50 - end["last"]) == np.sign(end.y - end["last"])).mean() * 100,
+        })
+    return pd.DataFrame(rows).set_index("model")
+
+
 # --- results log ----------------------------------------------------------
 
 def log(tag, summary, **meta):

@@ -12,15 +12,22 @@ import pandas as pd
 
 DATA = Path("data")
 OHLCV_OUT = DATA / "ohlcv.parquet"
+OHLCV_1H_OUT = DATA / "ohlcv_1h.parquet"
+OHLCV_15M_OUT = DATA / "ohlcv_15m.parquet"
 FUNDING_OUT = DATA / "funding.parquet"
 OI_OUT = DATA / "open_interest.parquet"
 
 # Which coins to model. Set to None to fall back on the top TOP_N by volume.
 ASSETS = ["BTC/USDT", "ETH/USDT", "BNB/USDT", "SOL/USDT", "XRP/USDT"]
 TOP_N = 50
-MIN_BARS = 365  # a series shorter than a year is noise in a panel
+MIN_BARS = 365  # a daily series shorter than a year is noise in a panel
 TIMEFRAME = "1d"
 START = "2017-01-01T00:00:00Z"
+# Intraday is a separate, heavier dataset for the high-frequency experiments.
+HOURLY_START = "2020-01-01T00:00:00Z"
+HOURLY_MIN_BARS = 24 * 180        # half a year of hours
+M15_START = "2021-01-01T00:00:00Z"
+M15_MIN_BARS = 96 * 180           # half a year of 15-min bars
 FUNDING_START = "2019-09-01T00:00:00Z"  # binance perps launched late 2019
 LIMIT = 1000  # binance max per request
 
@@ -75,28 +82,31 @@ def _page(call, since, now, label):
     return rows
 
 
-def check(df):
+def check(df, cutoff):
     """Invariants that must hold before anything downstream trusts this file."""
     assert not df.duplicated(["asset", "date"]).any(), "duplicate (asset, date)"
     assert df["date"].dt.tz is not None, "timestamps must be tz-aware UTC"
-    assert df["date"].max() < pd.Timestamp.now(tz="UTC").normalize(), "incomplete bar present"
+    assert df["date"].max() < cutoff, "incomplete bar present"
     assert (df[["open", "high", "low", "close"]] > 0).all().all(), "non-positive price"
     assert (df["high"] >= df["low"]).all(), "high < low"
     for asset, g in df.groupby("asset"):
         assert g["date"].is_monotonic_increasing, f"{asset}: dates not sorted"
 
 
-def fetch_ohlcv(ex=None):
+def fetch_ohlcv(ex=None, timeframe=TIMEFRAME, start=START, out=OHLCV_OUT, min_bars=MIN_BARS):
     ex = ex or ccxt.binance({"enableRateLimit": True})
-    start_ms, now = ex.parse8601(START), ex.milliseconds()
+    start_ms, now = ex.parse8601(start), ex.milliseconds()
     symbols = universe(ex)
-    print(f"universe: {len(symbols)} symbols by 24h volume")
+    # Incomplete-bar cutoff: current day for daily bars, current hour otherwise.
+    cutoff = (pd.Timestamp.now(tz="UTC").normalize() if timeframe.endswith("d")
+              else pd.Timestamp.now(tz="UTC").floor("h"))
+    print(f"universe: {len(symbols)} symbols, timeframe {timeframe}")
 
     frames = []
     for symbol in symbols:
-        rows = _page(lambda s: ex.fetch_ohlcv(symbol, TIMEFRAME, s, limit=LIMIT),
+        rows = _page(lambda s: ex.fetch_ohlcv(symbol, timeframe, s, limit=LIMIT),
                      start_ms, now, symbol)
-        if len(rows) < MIN_BARS:
+        if len(rows) < min_bars:
             print(f"  {symbol}: {len(rows)} bars, too short, skipped")
             continue
         f = pd.DataFrame(rows, columns=["ts", "open", "high", "low", "close", "volume"])
@@ -106,18 +116,30 @@ def fetch_ohlcv(ex=None):
 
     df = pd.concat(frames, ignore_index=True)
     df["date"] = pd.to_datetime(df["ts"], unit="ms", utc=True)
-    # Today's bar is still forming - keeping it would leak a partial close.
-    df = df[df["date"] < pd.Timestamp.now(tz="UTC").normalize()]
+    df = df[df["date"] < cutoff]  # drop the still-forming bar - partial close leaks
     df = (df.drop_duplicates(["asset", "date"])
             .sort_values(["asset", "date"]).reset_index(drop=True))
     df = df[["asset", "date", "open", "high", "low", "close", "volume"]]
 
-    check(df)
+    check(df, cutoff)
     DATA.mkdir(parents=True, exist_ok=True)
-    df.to_parquet(OHLCV_OUT, index=False)
-    print(f"\n{len(df)} rows, {df.asset.nunique()} assets -> {OHLCV_OUT}")
-    print(f"{df.date.min().date()} .. {df.date.max().date()}")
+    df.to_parquet(out, index=False)
+    print(f"\n{len(df)} rows, {df.asset.nunique()} assets -> {out}")
+    print(f"{df.date.min()} .. {df.date.max()}")
     return df
+
+
+def fetch_ohlcv_1h(ex=None):
+    """Hourly OHLCV since 2020 for the transformer experiments -> ohlcv_1h.parquet."""
+    return fetch_ohlcv(ex, timeframe="1h", start=HOURLY_START,
+                       out=OHLCV_1H_OUT, min_bars=HOURLY_MIN_BARS)
+
+
+def fetch_ohlcv_15m(ex=None):
+    """15-min OHLCV since 2021 for the high-frequency experiments -> ohlcv_15m.parquet.
+    Slow: ~1000 pages per coin. ~1M rows total for 5 coins."""
+    return fetch_ohlcv(ex, timeframe="15m", start=M15_START,
+                       out=OHLCV_15M_OUT, min_bars=M15_MIN_BARS)
 
 
 def fetch_derivatives(ex=None):
