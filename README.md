@@ -96,6 +96,9 @@ python -m venv .venv
 # forecast the next 7 days from any saved model
 .\.venv\Scripts\python.exe predict.py --model lstm
 .\.venv\Scripts\python.exe predict.py --model xgb --asset BTC --horizon 4
+
+# render a non-overwriting daily OOS evaluation bundle (five CSVs, six PNGs)
+.\.venv\Scripts\python.exe evaluate.py artifacts/evaluation/daily-tree-YYYYMMDD/predictions.parquet artifacts/evaluation/daily-neural-YYYYMMDD/predictions.parquet --out artifacts/reports/daily-YYYYMMDD
 ```
 
 Change the coin universe in `crypto/data.py` (`ASSETS`), then re-fetch and retrain.
