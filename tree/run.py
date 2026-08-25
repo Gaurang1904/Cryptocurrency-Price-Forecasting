@@ -13,7 +13,7 @@ import pandas as pd
 from crypto.backtest import H, coverage_by_h, log, run_folds, score
 from crypto.data import OHLCV_OUT
 from crypto.ensemble import blend_predictions, select_weight
-from crypto.evaluation import new_run_dir, save_predictions
+from crypto.evaluation import reserve_run_dir, save_predictions
 from crypto.features import build
 from crypto.model import bands, calibrate, clip_sigma, split_calibration
 from tree.adapter import inputs
@@ -43,7 +43,7 @@ def prediction_frame(name, rows, fold, h, sigma, z):
 def backtest(fitters=FITTERS, run_id=None,
              output_root=Path("artifacts/evaluation")):
     feat, cols = build(pd.read_parquet(OHLCV_OUT))
-    output_dir = new_run_dir("tree", feat.date.max(), run_id, output_root)
+    output_dir = reserve_run_dir("tree", feat.date.max(), run_id, output_root)
 
     recs, vol_err, blend_weights = [], [], []
     for train, test, start in run_folds(feat, cols):
@@ -89,7 +89,7 @@ def backtest(fitters=FITTERS, run_id=None,
         "features": cols, "run_id": run_id,
         "output_dir": output_dir.as_posix(),
         "blend_weights": blend_weights,
-    })
+    }, reserved=True)
     res.attrs["feature_count"] = len(cols)
     res.attrs["output_dir"] = output_dir.as_posix()
     return res, pd.DataFrame(vol_err)

@@ -16,7 +16,11 @@ tables are the source of every daily metric published in `README.md` and
 `RESULTS.md`; the six PNGs are views of those same persisted OOS predictions.
 [`manifest.json`](evaluation/daily-20260723/manifest.json) records the sample and
 configuration metadata and SHA-256 hashes of all eleven outputs plus both input
-prediction Parquets and their metadata files.
+prediction Parquets and their metadata files. Every recorded path is normalized
+relative to the declared repository provenance root; inputs or outputs outside
+that root are rejected rather than encoded with machine-specific fallbacks.
+Absolute path strings nested inside embedded input metadata follow the same
+normalization/rejection rule.
 
 ## Data and sample
 
@@ -152,7 +156,8 @@ The exact unrounded values are in:
 - [`metrics_by_regime.csv`](evaluation/daily-20260723/metrics_by_regime.csv)
 - [`manifest.json`](evaluation/daily-20260723/manifest.json), which binds the
   output tables/charts and input prediction bundles to SHA-256 hashes and records
-  cutoff, OOS dates, folds, origins, rows, models, horizons, and embedded run metadata.
+  cutoff, OOS dates, folds, origins, rows, models, horizons, embedded run metadata,
+  and the provenance-root-relative POSIX path contract.
 
 Regime labels are descriptive fold-local terciles of the persisted origin-time
 `vol_21d` driver. They never enter fitting, calibration, feature selection, or
@@ -182,24 +187,28 @@ Commands executed for this historical report:
 & 'C:\Users\gaura\VSCode\PredictionModel\Prediction-Model\.venv\Scripts\python.exe' -m tree.xgb
 & 'C:\Users\gaura\VSCode\PredictionModel\Prediction-Model\.venv\Scripts\python.exe' -m tree.run
 & 'C:\Users\gaura\VSCode\PredictionModel\Prediction-Model\.venv\Scripts\python.exe' -m neural.run
-& 'C:\Users\gaura\VSCode\PredictionModel\Prediction-Model\.venv\Scripts\python.exe' evaluate.py artifacts/evaluation/daily-tree-20260723-baseline/predictions.parquet artifacts/evaluation/daily-neural-20260723-baseline/predictions.parquet --out docs/evaluation/daily-20260723
+& 'C:\Users\gaura\VSCode\PredictionModel\Prediction-Model\.venv\Scripts\python.exe' evaluate.py artifacts/evaluation/daily-tree-20260723-baseline/predictions.parquet artifacts/evaluation/daily-neural-20260723-baseline/predictions.parquet --out docs/evaluation/daily-20260723 --provenance-root .
 ```
 
-The runners and evaluator reject an existing destination. Tree and neural runners
-also check their destination before fold fitting/window construction. If `--run-id`
-is omitted, each runner generates a 12-character UUID suffix. The following
-commands therefore rerun without deleting or overwriting earlier work:
+The evaluator rejects an existing destination and any input/output outside its
+declared `--provenance-root`. Tree and neural runners atomically reserve their run
+directory with `mkdir(exist_ok=False)` before fold fitting or neural window
+construction. If `--run-id` is omitted, each runner generates a 12-character UUID
+suffix. The following commands therefore rerun without deleting or overwriting
+earlier work:
 
 ```powershell
 & 'C:\Users\gaura\VSCode\PredictionModel\Prediction-Model\.venv\Scripts\python.exe' -m tree.run --output-root artifacts/evaluation
 & 'C:\Users\gaura\VSCode\PredictionModel\Prediction-Model\.venv\Scripts\python.exe' -m neural.run --output-root artifacts/evaluation
 $reportId = [guid]::NewGuid().ToString('N')
-& 'C:\Users\gaura\VSCode\PredictionModel\Prediction-Model\.venv\Scripts\python.exe' evaluate.py <new-tree-predictions.parquet> <new-neural-predictions.parquet> --out "docs/evaluation/daily-20260723-$reportId"
+& 'C:\Users\gaura\VSCode\PredictionModel\Prediction-Model\.venv\Scripts\python.exe' evaluate.py <new-tree-predictions.parquet> <new-neural-predictions.parquet> --out "docs/evaluation/daily-20260723-$reportId" --provenance-root .
 ```
 
 The angle-bracket paths are the two newly printed runner output paths. To use
 explicit labels instead, pass a unique `--run-id` to each runner; a reused label
-fails before expensive model work.
+fails before expensive model work. If training fails after reservation, that
+empty or partially populated directory intentionally remains reserved. Do not
+reuse it: inspect it as failure evidence and retry with a new run ID.
 
 ## Caveats
 

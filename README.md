@@ -92,7 +92,7 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m tree.run --output-root artifacts/evaluation
 .\.venv\Scripts\python.exe -m linear.run
 .\.venv\Scripts\python.exe -m neural.run --output-root artifacts/evaluation
-# tree/neural use an automatic UUID run ID when --run-id is omitted
+# tree/neural atomically reserve an automatic UUID run ID when --run-id is omitted
 
 # train + save + plot one model (artifact -> models/, svg -> plots/)
 .\.venv\Scripts\python.exe -m tree.lgbm
@@ -104,8 +104,8 @@ python -m venv .venv
 .\.venv\Scripts\python.exe predict.py --model lstm
 .\.venv\Scripts\python.exe predict.py --model xgb --asset BTC --horizon 4
 
-# render a non-overwriting bundle (five CSVs, six PNGs, SHA-256 manifest)
-.\.venv\Scripts\python.exe evaluate.py artifacts/evaluation/daily-tree-YYYYMMDD/predictions.parquet artifacts/evaluation/daily-neural-YYYYMMDD/predictions.parquet --out docs/evaluation/daily-YYYYMMDD
+# render a non-overwriting bundle with repository-root-relative provenance
+.\.venv\Scripts\python.exe evaluate.py artifacts/evaluation/daily-tree-YYYYMMDD-RUNID/predictions.parquet artifacts/evaluation/daily-neural-YYYYMMDD-RUNID/predictions.parquet --out docs/evaluation/daily-YYYYMMDD-RUNID --provenance-root .
 ```
 
 Change the coin universe in `crypto/data.py` (`ASSETS`), then re-fetch and retrain.

@@ -61,15 +61,22 @@ class EvaluationPlotTests(unittest.TestCase):
                 "pipeline": "daily", "data_end": "2025-01-10 00:00:00+00:00",
                 "horizons": 2, "folds": 1, "origins": 3,
             }
-            (tree_dir / "metadata.json").write_text(
-                json.dumps(metadata | {"family": "tree", "features": ["vol_21d"]})
-            )
-            (neural_dir / "metadata.json").write_text(
-                json.dumps(metadata | {"family": "neural", "lookback": 30})
-            )
+            (tree_dir / "metadata.json").write_text(json.dumps(metadata | {
+                "family": "tree", "features": ["vol_21d"],
+                "output_dir": str(tree_dir.resolve()),
+                "config": {"cache_path": str((tree_dir / "cache").resolve())},
+            }))
+            (neural_dir / "metadata.json").write_text(json.dumps(metadata | {
+                "family": "neural", "lookback": 30,
+                "output_dir": str(neural_dir.resolve()),
+                "config": {"cache_path": str((neural_dir / "cache").resolve())},
+            }))
 
             out = root / "report"
-            main([str(tree_predictions), str(neural_predictions), "--out", str(out)])
+            main([
+                str(tree_predictions), str(neural_predictions),
+                "--out", str(out), "--provenance-root", str(root),
+            ])
 
             csvs = {
                 "metrics_overall.csv", "metrics_by_horizon.csv",
@@ -87,6 +94,13 @@ class EvaluationPlotTests(unittest.TestCase):
             manifest = json.loads(manifest_path.read_text())
             self.assertEqual(manifest["manifest_version"], 1)
             self.assertEqual(manifest["hash_algorithm"], "sha256")
+            self.assertEqual(manifest["provenance"], {
+                "root": ".",
+                "path_format": "provenance-root-relative-posix",
+            })
+            encoded = json.dumps(manifest)
+            self.assertNotIn("absolute_path", encoded)
+            self.assertNotRegex(encoded, r"[A-Za-z]:[/\\]")
             self.assertEqual(manifest["evaluation"], {
                 "data_cutoff": "2025-01-10T00:00:00+00:00",
                 "oos_start": "2025-01-01T00:00:00+00:00",
@@ -108,6 +122,17 @@ class EvaluationPlotTests(unittest.TestCase):
                 {item["metadata"]["family"] for item in manifest["inputs"]},
                 {"tree", "neural"},
             )
+            self.assertEqual(
+                {item["metadata"]["output_dir"] for item in manifest["inputs"]},
+                {"tree", "neural"},
+            )
+            self.assertEqual(
+                {
+                    item["metadata"]["config"]["cache_path"]
+                    for item in manifest["inputs"]
+                },
+                {"tree/cache", "neural/cache"},
+            )
             for item, expected in zip(
                 manifest["inputs"], [tree_predictions, neural_predictions]
             ):
@@ -119,10 +144,56 @@ class EvaluationPlotTests(unittest.TestCase):
                 csvs | pngs,
             )
             for item in manifest["outputs"]:
-                artifact = Path.cwd() / item["path"]
+                artifact = root / item["path"]
                 self.assertEqual(
                     item["sha256"], hashlib.sha256(artifact.read_bytes()).hexdigest()
                 )
             with self.assertRaises(FileExistsError):
-                main([str(tree_predictions), str(neural_predictions),
-                      "--out", str(out)])
+                main([
+                    str(tree_predictions), str(neural_predictions),
+                    "--out", str(out), "--provenance-root", str(root),
+                ])
+
+    def test_cli_rejects_input_outside_provenance_root(self):
+        with (tempfile.TemporaryDirectory() as external_tmp,
+              tempfile.TemporaryDirectory(dir=Path.cwd()) as root_tmp):
+            external = Path(external_tmp)
+            root = Path(root_tmp)
+            predictions = external / "predictions.parquet"
+            evaluation_frame().to_parquet(predictions, index=False)
+            (external / "metadata.json").write_text(json.dumps({
+                "pipeline": "daily", "family": "tree",
+                "data_end": "2025-01-10 00:00:00+00:00",
+                "horizons": 2, "folds": 1, "origins": 3,
+            }), encoding="utf-8")
+            out = root / "report"
+
+            with self.assertRaisesRegex(ValueError, "outside provenance root"):
+                main([
+                    str(predictions), "--out", str(out),
+                    "--provenance-root", str(root),
+                ])
+            self.assertFalse(out.exists())
+
+    def test_cli_rejects_output_outside_provenance_root(self):
+        with (tempfile.TemporaryDirectory() as external_tmp,
+              tempfile.TemporaryDirectory(dir=Path.cwd()) as root_tmp):
+            external = Path(external_tmp)
+            root = Path(root_tmp)
+            bundle = root / "tree"
+            bundle.mkdir()
+            predictions = bundle / "predictions.parquet"
+            evaluation_frame().to_parquet(predictions, index=False)
+            (bundle / "metadata.json").write_text(json.dumps({
+                "pipeline": "daily", "family": "tree",
+                "data_end": "2025-01-10 00:00:00+00:00",
+                "horizons": 2, "folds": 1, "origins": 3,
+            }), encoding="utf-8")
+            out = external / "report"
+
+            with self.assertRaisesRegex(ValueError, "outside provenance root"):
+                main([
+                    str(predictions), "--out", str(out),
+                    "--provenance-root", str(root),
+                ])
+            self.assertFalse(out.exists())

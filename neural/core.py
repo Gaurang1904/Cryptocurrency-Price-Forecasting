@@ -15,7 +15,7 @@ from numpy.lib.stride_tricks import sliding_window_view
 
 from crypto.backtest import H, run_folds, score, coverage_by_h, log
 from crypto.features import build
-from crypto.evaluation import new_run_dir, save_predictions
+from crypto.evaluation import reserve_run_dir, save_predictions
 from crypto.model import bands, calibrate, clip_sigma, split_calibration
 
 LOOKBACK = 30
@@ -97,7 +97,7 @@ def backtest(builders, run_id=None,
              output_root=Path("artifacts/evaluation")):
     """builders: {name: fn(C) -> nn.Module}. Returns scored results DataFrame."""
     feat, _ = build(pd.read_parquet("data/ohlcv.parquet"))
-    output_dir = new_run_dir("neural", feat.date.max(), run_id, output_root)
+    output_dir = reserve_run_dir("neural", feat.date.max(), run_id, output_root)
     win, index = channel_windows(feat)
     ytargets = [f"rv{h}" for h in range(1, H + 1)]
 
@@ -143,7 +143,7 @@ def backtest(builders, run_id=None,
         "origins": res[["asset", "origin"]].drop_duplicates().shape[0],
         "models": list(builders), "lookback": LOOKBACK, "channels": CHANNELS,
         "run_id": run_id, "output_dir": output_dir.as_posix(),
-    })
+    }, reserved=True)
     res.attrs["output_dir"] = output_dir.as_posix()
     return res, pd.DataFrame(vol_err)
 

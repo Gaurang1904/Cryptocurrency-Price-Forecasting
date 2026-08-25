@@ -341,3 +341,137 @@ PASS: targeted false headline, causal-attribution, retention, and deployability 
 ```
 
 `git diff --check` exited 0 apart from Git's Windows line-ending warnings.
+
+## Round 2/5 review fixes
+
+Review fixes were implemented on top of `927e97f`.
+
+### Portable provenance root
+
+- `evaluate.py` accepts `--provenance-root`, defaulting to the current invocation
+  directory. The canonical command declares the repository root with
+  `--provenance-root .`.
+- Prediction, metadata, output-table, and chart paths are resolved, required to
+  remain inside that root, and serialized as normalized root-relative POSIX paths.
+- Inputs or outputs outside the root fail with a clear `ValueError` before the
+  evaluator reads prediction data or creates its output directory.
+- The absolute fallback fields were removed. Absolute path strings at any nesting
+  depth in embedded metadata are normalized through the same root contract, so the
+  manifest has no drive-specific values.
+- The manifest declares `{"root": ".", "path_format":
+  "provenance-root-relative-posix"}`.
+
+### Atomic run reservation
+
+- `reserve_run_dir` now performs the reservation with
+  `mkdir(parents=True, exist_ok=False)`. This atomically creates the leaf run
+  directory, so a same-ID second reservation fails immediately.
+- Tree and neural runners reserve after the cutoff/feature load and before fold
+  fitting or neural window construction.
+- `save_predictions(..., reserved=True)` consumes only an existing empty
+  reservation. It refuses missing, populated, or already-consumed reservations.
+  Its ordinary mode still refuses any pre-existing directory.
+- A training or write failure intentionally leaves its empty or partial reservation
+  in place. The methodology instructs operators to inspect it and retry with a new
+  run ID rather than reusing the failed reservation.
+
+### TDD evidence
+
+Atomic reservation RED:
+
+```text
+C:\Users\gaura\VSCode\PredictionModel\Prediction-Model\.venv\Scripts\python.exe -m unittest tests.test_evaluation.PredictionValidationTests.test_reserve_run_directory_is_atomic_and_rejects_collisions tests.test_evaluation.PredictionValidationTests.test_save_consumes_reserved_empty_directory_once tests.test_evaluation.PredictionValidationTests.test_save_refuses_populated_reserved_directory tests.test_evaluation.PredictionValidationTests.test_runners_leave_atomic_reservation_before_expensive_work -v
+FAILED (failures=3, errors=2)
+- reserve_run_dir did not exist
+- save_predictions rejected the reserved keyword
+- runner destinations did not exist when expensive work began
+```
+
+Atomic reservation GREEN:
+
+```text
+Ran 4 tests in 5.020s
+OK
+```
+
+Provenance root RED:
+
+```text
+C:\Users\gaura\VSCode\PredictionModel\Prediction-Model\.venv\Scripts\python.exe -m unittest tests.test_evaluation_plots.EvaluationPlotTests.test_cli_writes_hashed_manifest_and_never_overwrites_output tests.test_evaluation_plots.EvaluationPlotTests.test_cli_rejects_input_outside_provenance_root tests.test_evaluation_plots.EvaluationPlotTests.test_cli_rejects_output_outside_provenance_root -v
+FAILED (errors=3)
+error: unrecognized arguments: --provenance-root
+```
+
+Provenance root GREEN:
+
+```text
+Ran 3 tests in 2.649s
+OK
+```
+
+A nested absolute `cache_path` fixture then proved that normalizing only the
+top-level `output_dir` was insufficient:
+
+```text
+C:\Users\gaura\VSCode\PredictionModel\Prediction-Model\.venv\Scripts\python.exe -m unittest tests.test_evaluation_plots.EvaluationPlotTests.test_cli_writes_hashed_manifest_and_never_overwrites_output -v
+FAIL: drive-specific C:\ value remained in nested metadata
+
+after recursive metadata path normalization:
+Ran 1 test in 1.260s
+OK
+```
+
+The first combined run found one test-boundary regression: the ensemble test's
+save double still accepted only the old three-argument signature. The production
+runner correctly passed `reserved=True`. The test double was updated to mirror the
+real boundary and its run output was moved under a temporary directory.
+
+```text
+C:\Users\gaura\VSCode\PredictionModel\Prediction-Model\.venv\Scripts\python.exe -m unittest tests.test_ensemble.EnsembleTests.test_tree_backtest_selects_on_calibration_and_persists_only_test_blend -v
+Ran 1 test in 1.331s
+OK
+
+C:\Users\gaura\VSCode\PredictionModel\Prediction-Model\.venv\Scripts\python.exe -m unittest tests.test_evaluation tests.test_evaluation_plots tests.test_ensemble -v
+Ran 29 tests in 5.729s
+OK
+```
+
+### Regeneration and verification
+
+The canonical bundle was regenerated with:
+
+```powershell
+& 'C:\Users\gaura\VSCode\PredictionModel\Prediction-Model\.venv\Scripts\python.exe' evaluate.py artifacts/evaluation/daily-tree-20260723-baseline/predictions.parquet artifacts/evaluation/daily-neural-20260723-baseline/predictions.parquet --out docs/evaluation/daily-20260723 --provenance-root .
+```
+
+Observed:
+
+```text
+provenance=. format=provenance-root-relative-posix
+inputs=2 outputs=11 rows=60690 origins=1445
+absolute_path_fields=0 drive_specific_values=0 hashes=matched
+```
+
+Final Round 2 gates:
+
+```text
+C:\Users\gaura\VSCode\PredictionModel\Prediction-Model\.venv\Scripts\python.exe -m unittest tests.test_evaluation tests.test_evaluation_plots tests.test_ensemble -v
+Ran 29 tests in 5.759s
+OK
+
+C:\Users\gaura\VSCode\PredictionModel\Prediction-Model\.venv\Scripts\python.exe -m unittest discover -s tests -v
+Ran 35 tests in 5.593s
+OK
+
+C:\Users\gaura\VSCode\PredictionModel\Prediction-Model\.venv\Scripts\python.exe -m compileall -q crypto tree linear neural experiments fetch.py predict.py evaluate.py
+exit 0
+
+artifact portability/integrity validator
+PASS: provenance declared; 0 absolute fields; 0 drive values; 13 artifact hashes and 2 metadata hashes matched
+
+documentation reference validator
+PASS: 17 local references
+
+git diff --check
+exit 0 (Windows line-ending warnings only)
+```

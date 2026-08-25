@@ -20,11 +20,11 @@ def default_run_dir(tag, data_end, run_id, root=Path("artifacts/evaluation")):
     return Path(root) / f"daily-{tag}-{stamp}-{run_id}"
 
 
-def new_run_dir(tag, data_end, run_id=None, root=Path("artifacts/evaluation")):
+def reserve_run_dir(tag, data_end, run_id=None, root=Path("artifacts/evaluation")):
+    """Atomically reserve an empty run directory before expensive work."""
     run_id = run_id or uuid4().hex[:12]
     output_dir = default_run_dir(tag, data_end, run_id, root)
-    if output_dir.exists():
-        raise FileExistsError(f"run directory already exists: {output_dir}")
+    output_dir.mkdir(parents=True, exist_ok=False)
     return output_dir
 
 
@@ -44,10 +44,16 @@ def validate_predictions(frame):
         raise ValueError("mismatched horizons")
 
 
-def save_predictions(frame, output_dir, metadata):
+def save_predictions(frame, output_dir, metadata, reserved=False):
     validate_predictions(frame)
     output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=False)
+    if reserved:
+        if not output_dir.is_dir() or any(output_dir.iterdir()):
+            raise FileExistsError(
+                f"reserved run directory is unavailable or not empty: {output_dir}"
+            )
+    else:
+        output_dir.mkdir(parents=True, exist_ok=False)
     frame.to_parquet(output_dir / "predictions.parquet", index=False)
     (output_dir / "metadata.json").write_text(
         json.dumps(metadata, indent=2, default=str), encoding="utf-8"

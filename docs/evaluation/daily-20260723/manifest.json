@@ -1,6 +1,10 @@
 {
   "manifest_version": 1,
   "hash_algorithm": "sha256",
+  "provenance": {
+    "root": ".",
+    "path_format": "provenance-root-relative-posix"
+  },
   "evaluation": {
     "data_cutoff": "2026-07-23T00:00:00+00:00",
     "oos_start": "2021-01-01T00:00:00+00:00",

@@ -17,28 +17,48 @@ def _sha256(path):
     return digest.hexdigest()
 
 
-def _path_fields(path):
+def _root_relative(path, provenance_root):
     resolved = Path(path).resolve()
     try:
-        return {"path": resolved.relative_to(Path.cwd().resolve()).as_posix()}
+        return resolved.relative_to(provenance_root).as_posix()
     except ValueError:
-        return {"path": resolved.name, "absolute_path": resolved.as_posix()}
+        raise ValueError(
+            f"path is outside provenance root {provenance_root}: {resolved}"
+        ) from None
 
 
-def _input_record(path):
+def _portable_metadata(value, provenance_root):
+    if isinstance(value, dict):
+        return {
+            key: _portable_metadata(item, provenance_root)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_portable_metadata(item, provenance_root) for item in value]
+    if isinstance(value, str) and Path(value).is_absolute():
+        return _root_relative(value, provenance_root)
+    return value
+
+
+def _input_record(path, provenance_root):
     path = Path(path)
     metadata_path = path.with_name("metadata.json")
-    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-    record = _path_fields(path) | {"sha256": _sha256(path), "metadata": metadata}
-    metadata_fields = _path_fields(metadata_path)
-    record["metadata_path"] = metadata_fields.pop("path")
-    if metadata_fields:
-        record["metadata_absolute_path"] = metadata_fields["absolute_path"]
-    record["metadata_sha256"] = _sha256(metadata_path)
-    return record
+    prediction_path = _root_relative(path, provenance_root)
+    relative_metadata_path = _root_relative(metadata_path, provenance_root)
+    metadata = _portable_metadata(
+        json.loads(metadata_path.read_text(encoding="utf-8")),
+        provenance_root,
+    )
+    return {
+        "path": prediction_path,
+        "sha256": _sha256(path),
+        "metadata": metadata,
+        "metadata_path": relative_metadata_path,
+        "metadata_sha256": _sha256(metadata_path),
+    }
 
 
-def _manifest(frame, inputs, output_paths):
+def _manifest(frame, inputs, output_paths, provenance_root):
     cutoffs = {pd.Timestamp(item["metadata"]["data_end"]).isoformat()
                for item in inputs}
     if len(cutoffs) != 1:
@@ -47,6 +67,10 @@ def _manifest(frame, inputs, output_paths):
     return {
         "manifest_version": 1,
         "hash_algorithm": "sha256",
+        "provenance": {
+            "root": ".",
+            "path_format": "provenance-root-relative-posix",
+        },
         "evaluation": {
             "data_cutoff": cutoffs.pop(),
             "oos_start": pd.Timestamp(frame.origin.min()).isoformat(),
@@ -60,7 +84,10 @@ def _manifest(frame, inputs, output_paths):
         },
         "inputs": inputs,
         "outputs": [
-            _path_fields(path) | {"sha256": _sha256(path)}
+            {
+                "path": _root_relative(path, provenance_root),
+                "sha256": _sha256(path),
+            }
             for path in sorted(output_paths)
         ],
     }
@@ -70,13 +97,27 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description="Render daily OOS evaluation charts.")
     parser.add_argument("predictions", nargs="+", type=Path)
     parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument(
+        "--provenance-root", type=Path, default=Path.cwd(),
+        help="Root for portable manifest paths; defaults to the invocation directory.",
+    )
     args = parser.parse_args(argv)
+
+    provenance_root = args.provenance_root.resolve()
+    if not provenance_root.is_dir():
+        raise ValueError(
+            f"provenance root is not a directory: {provenance_root}"
+        )
+    for path in [*args.predictions, args.out]:
+        _root_relative(path, provenance_root)
 
     frames = [pd.read_parquet(path) for path in args.predictions]
     frame = pd.concat(frames, ignore_index=True)
     validate_predictions(frame)
     require_volatility_baseline(frame)
-    inputs = [_input_record(path) for path in args.predictions]
+    inputs = [
+        _input_record(path, provenance_root) for path in args.predictions
+    ]
     cutoffs = {pd.Timestamp(item["metadata"]["data_end"]).isoformat()
                for item in inputs}
     if len(cutoffs) != 1:
@@ -91,7 +132,7 @@ def main(argv=None):
     render_bundle(frame, args.out)
     output_paths.extend(sorted(args.out.glob("*.png")))
 
-    manifest = _manifest(frame, inputs, output_paths)
+    manifest = _manifest(frame, inputs, output_paths, provenance_root)
     (args.out / "manifest.json").write_text(
         json.dumps(manifest, indent=2, default=str) + "\n", encoding="utf-8"
     )

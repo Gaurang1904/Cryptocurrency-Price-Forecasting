@@ -1,4 +1,6 @@
+import tempfile
 import unittest
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -111,20 +113,24 @@ class EnsembleTests(unittest.TestCase):
 
         saved = {}
 
-        def save(frame, _output_dir, metadata):
+        def save(frame, _output_dir, metadata, reserved=False):
             saved["frame"] = frame.copy()
             saved["metadata"] = metadata
 
-        with (patch.object(run, "build", return_value=(test, [])),
+        with (tempfile.TemporaryDirectory(dir=Path.cwd()) as tmp,
+              patch.object(run, "build", return_value=(test, [])),
               patch.object(run.pd, "read_parquet", return_value=test),
               patch.object(run, "run_folds", return_value=[(train, test, fold)]),
               patch.object(run, "split_calibration", return_value=(fit, cal)),
               patch.object(run, "select_weight", side_effect=choose),
               patch.object(run, "save_predictions", side_effect=save)):
-            result, vol_err = run.backtest({
-                "xgb": fitter("xgb", 0.1),
-                "lgbm": fitter("lgbm", 0.2),
-            })
+            result, vol_err = run.backtest(
+                {
+                    "xgb": fitter("xgb", 0.1),
+                    "lgbm": fitter("lgbm", 0.2),
+                },
+                output_root=Path(tmp),
+            )
 
         self.assertEqual(fitted, {"xgb": list(range(1, 8)), "lgbm": list(range(1, 8))})
         self.assertEqual(len(selection_origins), run.H)

@@ -33,21 +33,26 @@ class PredictionValidationTests(unittest.TestCase):
         )
         self.assertEqual(got, Path("out/daily-tree-20260723-baseline"))
 
-    def test_new_run_directory_is_unique_and_rejects_collisions(self):
+    def test_reserve_run_directory_is_atomic_and_rejects_collisions(self):
         from crypto import evaluation
 
-        self.assertTrue(hasattr(evaluation, "new_run_dir"))
+        self.assertTrue(hasattr(evaluation, "reserve_run_dir"))
         with tempfile.TemporaryDirectory(dir=Path.cwd()) as tmp:
             root = Path(tmp)
             cutoff = pd.Timestamp("2026-07-23", tz="UTC")
-            first = evaluation.new_run_dir("tree", cutoff, root=root)
-            second = evaluation.new_run_dir("tree", cutoff, root=root)
+            first = evaluation.reserve_run_dir("tree", cutoff, root=root)
+            second = evaluation.reserve_run_dir("tree", cutoff, root=root)
             self.assertNotEqual(first, second)
-            self.assertFalse(first.exists())
-            taken = default_run_dir("tree", cutoff, "taken", root)
-            taken.mkdir()
+            self.assertTrue(first.is_dir())
+            self.assertEqual(list(first.iterdir()), [])
+            taken = evaluation.reserve_run_dir(
+                "tree", cutoff, run_id="taken", root=root
+            )
+            self.assertTrue(taken.is_dir())
             with self.assertRaises(FileExistsError):
-                evaluation.new_run_dir("tree", cutoff, "taken", root)
+                evaluation.reserve_run_dir(
+                    "tree", cutoff, run_id="taken", root=root
+                )
 
     def test_valid_predictions_are_accepted(self):
         validate_predictions(valid_frame())
@@ -116,7 +121,8 @@ class PredictionValidationTests(unittest.TestCase):
         cal_prediction = np.log(np.full((2, core.H), 0.1))
         test_prediction = np.log(np.array([np.arange(0.21, 0.21 + core.H * 0.01, 0.01), np.arange(0.29, 0.29 + core.H * 0.001, 0.001)]))
 
-        with (patch.object(core, "build", return_value=(test, [])),
+        with (tempfile.TemporaryDirectory(dir=Path.cwd()) as tmp,
+              patch.object(core, "build", return_value=(test, [])),
               patch.object(core.pd, "read_parquet", return_value=test),
               patch.object(core, "channel_windows", return_value=(np.zeros((2, 1, 1)), test[["asset", "date"]])),
               patch.object(core, "run_folds", return_value=[(train, test, fold)]),
@@ -127,7 +133,10 @@ class PredictionValidationTests(unittest.TestCase):
               patch.object(core, "calibrate", return_value={0.1: 1.0, 0.5: 1.0, 0.9: 1.0}),
               patch.object(core, "save_predictions"),
               patch.object(core, "bands", side_effect=lambda _z, last, _sigma, _h: {0.1: last * 0.9, 0.5: last, 0.9: last * 1.1})):
-            res, _ = core.backtest({"test-net": lambda _channels: object()})
+            res, _ = core.backtest(
+                {"test-net": lambda _channels: object()},
+                output_root=Path(tmp),
+            )
 
         h1 = res[res.h == 1]
         self.assertListEqual(h1.origin.tolist(), test.date.tolist())
@@ -148,7 +157,8 @@ class PredictionValidationTests(unittest.TestCase):
         train = pd.concat([test, test], ignore_index=True)
         fold = pd.Timestamp("2026-01-01", tz="UTC")
 
-        with (patch.object(run, "build", return_value=(test, [])),
+        with (tempfile.TemporaryDirectory(dir=Path.cwd()) as tmp,
+              patch.object(run, "build", return_value=(test, [])),
               patch.object(run.pd, "read_parquet", return_value=test),
               patch.object(run, "run_folds", return_value=[(train, test, fold)]),
               patch.object(run, "split_calibration", return_value=(train, test)),
@@ -156,7 +166,10 @@ class PredictionValidationTests(unittest.TestCase):
               patch.object(run, "calibrate", return_value={0.1: 1.0, 0.5: 1.0, 0.9: 1.0}),
               patch.object(run, "save_predictions"),
               patch.object(run, "bands", side_effect=lambda _z, last, _sigma, _h: {0.1: last * 0.9, 0.5: last, 0.9: last * 1.1})):
-            res, _ = run.backtest({"test-tree": lambda *_args: object()})
+            res, _ = run.backtest(
+                {"test-tree": lambda *_args: object()},
+                output_root=Path(tmp),
+            )
 
         h1 = res[(res.model == "test-tree") & (res.h == 1)]
         self.assertListEqual(h1.origin.tolist(), test.date.tolist())
@@ -202,6 +215,37 @@ class PredictionValidationTests(unittest.TestCase):
                         with self.assertRaises(FileExistsError):
                             module.backtest({}, run_id="taken", output_root=root)
 
+    def test_runners_leave_atomic_reservation_before_expensive_work(self):
+        from neural import core
+        from tree import run
+
+        cutoff = pd.Timestamp("2026-07-23", tz="UTC")
+        feat = pd.DataFrame({"date": [cutoff]})
+        with tempfile.TemporaryDirectory(dir=Path.cwd()) as tmp:
+            root = Path(tmp)
+            for tag, module, expensive in (
+                ("tree", run, "run_folds"),
+                ("neural", core, "channel_windows"),
+            ):
+                with self.subTest(tag=tag):
+                    with (patch.object(module, "build", return_value=(feat, [])),
+                          patch.object(module.pd, "read_parquet", return_value=feat),
+                          patch.object(
+                              module, expensive,
+                              side_effect=RuntimeError("expensive work started"),
+                          )):
+                        with self.assertRaisesRegex(
+                            RuntimeError, "expensive work started"
+                        ):
+                            module.backtest(
+                                {}, run_id="orphan", output_root=root
+                            )
+                    reserved = default_run_dir(
+                        tag, cutoff, "orphan", root
+                    )
+                    self.assertTrue(reserved.is_dir())
+                    self.assertEqual(list(reserved.iterdir()), [])
+
     def test_save_writes_predictions_and_metadata_without_overwrite(self):
         with tempfile.TemporaryDirectory() as tmp:
             out = save_predictions(valid_frame(), Path(tmp) / "run-1", {"pipeline": "daily"})
@@ -209,3 +253,44 @@ class PredictionValidationTests(unittest.TestCase):
             self.assertTrue((out / "metadata.json").exists())
             with self.assertRaises(FileExistsError):
                 save_predictions(valid_frame(), Path(tmp) / "run-1", {"pipeline": "daily"})
+            existing_empty = Path(tmp) / "existing-empty"
+            existing_empty.mkdir()
+            with self.assertRaises(FileExistsError):
+                save_predictions(
+                    valid_frame(), existing_empty, {"pipeline": "daily"}
+                )
+
+    def test_save_consumes_reserved_empty_directory_once(self):
+        from crypto.evaluation import reserve_run_dir
+
+        with tempfile.TemporaryDirectory() as tmp:
+            reserved = reserve_run_dir(
+                "tree", pd.Timestamp("2026-07-23", tz="UTC"),
+                run_id="reserved", root=Path(tmp),
+            )
+            out = save_predictions(
+                valid_frame(), reserved, {"pipeline": "daily"}, reserved=True
+            )
+            self.assertEqual(out, reserved)
+            self.assertEqual(
+                {path.name for path in reserved.iterdir()},
+                {"predictions.parquet", "metadata.json"},
+            )
+            with self.assertRaises(FileExistsError):
+                save_predictions(
+                    valid_frame(), reserved, {"pipeline": "daily"}, reserved=True
+                )
+
+    def test_save_refuses_populated_reserved_directory(self):
+        from crypto.evaluation import reserve_run_dir
+
+        with tempfile.TemporaryDirectory() as tmp:
+            reserved = reserve_run_dir(
+                "tree", pd.Timestamp("2026-07-23", tz="UTC"),
+                run_id="reserved", root=Path(tmp),
+            )
+            (reserved / "orphan.txt").write_text("occupied", encoding="utf-8")
+            with self.assertRaises(FileExistsError):
+                save_predictions(
+                    valid_frame(), reserved, {"pipeline": "daily"}, reserved=True
+                )
