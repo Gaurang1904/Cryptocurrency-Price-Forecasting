@@ -47,6 +47,10 @@ near-interchangeable; the ceiling is the data, not the model.
 The linear family (Ridge, HAR-RV, GARCH) and classical price models (ARIMA, SARIMA)
 are backtested for comparison but not deployed - they refit per series on demand.
 
+**Full scoreboard incl. the 15-min transformer experiments: [RESULTS.md](RESULTS.md).**
+
+![correlation heatmap](docs/eda_correlation.png)
+
 ---
 
 ## Layout

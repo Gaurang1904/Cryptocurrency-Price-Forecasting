@@ -153,10 +153,13 @@ def log(tag, summary, **meta):
     metrics still share one schema.
     ponytail: a CSV is experiment tracking until two people need to query it.
     """
+    # Fixed schema: meta goes in ONE column as "k=v;..." so runs with different
+    # meta keys (origins vs horizon) never misalign the appended CSV.
+    meta_str = ";".join(f"{k}={v}" for k, v in meta.items())
     long = (summary.reset_index()
             .melt(id_vars="model", var_name="metric", value_name="value")
-            .assign(run=pd.Timestamp.now(tz="UTC").floor("s"), tag=tag, **meta))
-    cols = ["run", "tag"] + list(meta) + ["model", "metric", "value"]
+            .assign(run=pd.Timestamp.now(tz="UTC").floor("s"), tag=tag, meta=meta_str))
+    cols = ["run", "tag", "meta", "model", "metric", "value"]
     long[cols].to_csv(RESULTS, mode="a", header=not RESULTS.exists(), index=False)
     print(f"\nlogged {len(long)} rows to {RESULTS}")
 

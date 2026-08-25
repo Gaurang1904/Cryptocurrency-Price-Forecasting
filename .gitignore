@@ -3,10 +3,12 @@
 *.xlsx
 *.parquet
 data/
-models/
 
-# ...but the experiment log is the record, keep it
-!results.csv
+# Trained models are committed so predict.py runs out-of-box (small artifacts).
+# Regenerate any with `python -m tree.lgbm` etc. Ignore backtest cv dumps only.
+models/_cv_*
+# big tree artifacts - regenerate with `python -m tree.lgbm`
+models/*.joblib
 
 # Ignore Python cache
 __pycache__/
