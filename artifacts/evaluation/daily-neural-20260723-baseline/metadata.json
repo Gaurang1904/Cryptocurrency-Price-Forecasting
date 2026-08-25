@@ -1,0 +1,19 @@
+{
+  "pipeline": "daily",
+  "family": "neural",
+  "data_end": "2026-07-23 00:00:00+00:00",
+  "horizons": 7,
+  "folds": 6,
+  "origins": 1445,
+  "models": [
+    "dlinear",
+    "lstm"
+  ],
+  "lookback": 30,
+  "channels": [
+    "r",
+    "ar",
+    "rng",
+    "dv"
+  ]
+}

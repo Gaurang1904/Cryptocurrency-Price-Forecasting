@@ -25,20 +25,26 @@ not proof that no model can improve on the data.
 
 ---
 
-## Daily volatility — 7-day interval forecast (~1,445 origins, 5 assets)
+## Daily volatility — 7-day interval forecast (1,445 origins, 5 assets)
+
+Historical OOS evaluation: data cutoff **2026-07-23**, forecast origins
+2021-01-01 through 2026-07-14. This is not a current/live forecast. Exact
+provenance, acceptance gates, subgroup tables, and charts are in the
+[daily methodology](docs/evaluation-methodology.md) and
+[generated evidence](docs/evaluation/daily-20260723/).
 
 Predict daily volatility, turn it into a calibrated price interval. Lower pinball
 better; coverage target is 80%.
 
 | model | family | pinball | coverage % |
 |---|---|---|---|
-| LSTM | neural | **162.97** | 80.0 |
-| DLinear | neural | 163.22 | 79.7 |
-| XGBoost | tree | 166.98 | 79.0 |
-| LightGBM | tree | 167.92 | 78.7 |
+| LSTM | neural | **162.98** | 79.9 |
+| DLinear | neural | 163.28 | 79.8 |
+| XGBoost | tree | 166.74 | 78.8 |
+| LightGBM | tree | 167.69 | 78.8 |
 | vol_21d (baseline) | — | 167.99 | 79.3 |
 
-All models cluster within ~3% — near-interchangeable. The neural edge is the
+All models cluster within ~2.9% — near-interchangeable. The neural edge is the
 sequence input, not depth (DLinear ≈ LSTM).
 
 ---

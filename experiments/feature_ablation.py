@@ -19,7 +19,13 @@ OUT = Path("artifacts/feature_ablation.csv")
 
 
 def ablation_candidates(cols):
-    candidates = {"all": cols}
+    candidates = {
+        "all": cols,
+        "legacy": [
+            c for c in cols
+            if c not in {"vol_regime", "drawdown_63d", "volume_z21"}
+        ],
+    }
     for group, members in feature_groups(cols).items():
         candidates[f"without_{group}"] = [c for c in cols if c not in members]
     return candidates

@@ -10,7 +10,7 @@ BTC    65098.97      1.83     60510.73  64858.48  69070.91   13.15
 
 Read as: median 64,858, and an 80% chance BTC finishes between 60,511 and 69,071.
 
-Trained on 5 assets (BTC, ETH, BNB, SOL, XRP), ~15k daily bars, 2017-2026. Every
+Trained on 5 assets (BTC, ETH, BNB, SOL, XRP), 14,884 daily bars, 2017-2026. Every
 number below is measured by walk-forward backtest across ~1,400+ out-of-sample
 origins. The published scoreboard is in `RESULTS.md`; the original machine-generated
 experiment log is retained as `results_legacy.csv`.
@@ -32,16 +32,21 @@ turns that into a price interval. Coverage lands near the 80% target.
 
 ---
 
-## Results (deployable models, ~1,400 origins)
+## Results (deployable models, 1,445 origins)
+
+These are historical OOS results with data through **2026-07-23** and forecast
+origins through 2026-07-14; they are not a current/live forecast. See the
+[methodology](docs/evaluation-methodology.md) and
+[generated evidence](docs/evaluation/daily-20260723/).
 
 | model | family | pinball | coverage (target 80) |
 |---|---|---|---|
-| lstm | neural | 162.97 | 80.0 |
-| dlinear | neural | 163.22 | 79.7 |
-| xgb | tree | 166.98 | 79.0 |
-| lgbm | tree | 167.92 | 78.7 |
+| lstm | neural | 162.98 | 79.9 |
+| dlinear | neural | 163.28 | 79.8 |
+| xgb | tree | 166.74 | 78.8 |
+| lgbm | tree | 167.69 | 78.8 |
 
-Neural (sequence input) edges the trees (engineered features) by ~3% - small, and
+Neural (sequence input) edges the trees (engineered features) by ~2.3% - small, and
 DLinear ≈ LSTM, so the gain is the sequence representation, not depth. All four are
 near-interchangeable; the ceiling is the data, not the model.
 
@@ -98,7 +103,7 @@ python -m venv .venv
 .\.venv\Scripts\python.exe predict.py --model xgb --asset BTC --horizon 4
 
 # render a non-overwriting daily OOS evaluation bundle (five CSVs, six PNGs)
-.\.venv\Scripts\python.exe evaluate.py artifacts/evaluation/daily-tree-YYYYMMDD/predictions.parquet artifacts/evaluation/daily-neural-YYYYMMDD/predictions.parquet --out artifacts/reports/daily-YYYYMMDD
+.\.venv\Scripts\python.exe evaluate.py artifacts/evaluation/daily-tree-YYYYMMDD/predictions.parquet artifacts/evaluation/daily-neural-YYYYMMDD/predictions.parquet --out docs/evaluation/daily-YYYYMMDD
 ```
 
 Change the coin universe in `crypto/data.py` (`ASSETS`), then re-fetch and retrain.
