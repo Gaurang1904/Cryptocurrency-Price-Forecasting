@@ -15,6 +15,7 @@ from numpy.lib.stride_tricks import sliding_window_view
 
 from crypto.backtest import H, run_folds, score, coverage_by_h, log
 from crypto.features import build
+from crypto.evaluation import default_run_dir, save_predictions
 from crypto.model import bands, calibrate, clip_sigma, split_calibration
 
 LOOKBACK = 30
@@ -99,7 +100,7 @@ def backtest(builders):
     ytargets = [f"rv{h}" for h in range(1, H + 1)]
 
     recs, vol_err = [], []
-    for train, test, _ in run_folds(feat, DRIVER):
+    for train, test, start in run_folds(feat, DRIVER):
         train = train.dropna(subset=ytargets)
         fit, cal = split_calibration(train)
 
@@ -123,7 +124,9 @@ def backtest(builders):
                 z = calibrate(cal[f"y{h}"].to_numpy(), sig_cal[:, h - 1], h)
                 y = last * np.exp(test[f"y{h}"].to_numpy())
                 recs.append(pd.DataFrame({
-                    "model": name, "asset": test.asset.values, "h": h, "y": y, "last": last,
+                    "model": name, "asset": test.asset.values, "origin": test.date.to_numpy(),
+                    "fold": np.repeat(start, len(test)), "h": h, "y": y, "last": last,
+                    "sigma": sig_te[:, h - 1], "rv": test[f"rv{h}"].to_numpy(),
                     **{f"q{int(q * 100)}": v
                        for q, v in bands(z, last, sig_te[:, h - 1], h).items()},
                 }))
@@ -132,6 +135,12 @@ def backtest(builders):
                                 "mae": np.nanmean(np.abs(truth - np.log(sig_te[:, h - 1])))})
 
     res = pd.concat(recs, ignore_index=True)
+    save_predictions(res, default_run_dir("neural", feat.date.max(), "baseline"), {
+        "pipeline": "daily", "family": "neural", "data_end": feat.date.max(),
+        "horizons": H, "folds": res.fold.nunique(),
+        "origins": res[["asset", "origin"]].drop_duplicates().shape[0],
+        "models": list(builders), "lookback": LOOKBACK, "channels": CHANNELS,
+    })
     return res, pd.DataFrame(vol_err)
 
 

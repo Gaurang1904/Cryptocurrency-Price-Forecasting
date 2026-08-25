@@ -11,6 +11,11 @@ REQUIRED = [
 KEY = ["model", "asset", "origin", "h"]
 
 
+def default_run_dir(tag, data_end, run_id, root=Path("artifacts/evaluation")):
+    stamp = pd.Timestamp(data_end).strftime("%Y%m%d")
+    return Path(root) / f"daily-{tag}-{stamp}-{run_id}"
+
+
 def validate_predictions(frame):
     missing = sorted(set(REQUIRED) - set(frame.columns))
     if missing:
