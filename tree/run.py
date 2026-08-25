@@ -24,7 +24,7 @@ def model_sigma(fit_one, fit, cal, test, cols, h):
             clip_sigma(np.exp(m.predict(inputs(test, cols)))))
 
 
-if __name__ == "__main__":
+def backtest(fitters=FITTERS):
     feat, cols = build(pd.read_parquet(OHLCV_OUT))
 
     recs, vol_err = [], []
@@ -38,7 +38,10 @@ if __name__ == "__main__":
         for h in range(1, H + 1):
             y = last * np.exp(test[f"y{h}"].to_numpy())
             truth = np.log(test[f"rv{h}"].to_numpy())
-            sig = {name: model_sigma(f, fit, cal, test, cols, h) for name, f in FITTERS.items()}
+            sig = {
+                name: model_sigma(f, fit, cal, test, cols, h)
+                for name, f in fitters.items()
+            }
             sig["vol_21d"] = (cal.vol_21d.to_numpy(), test.vol_21d.to_numpy())
 
             for name, (s_cal, s_te) in sig.items():
@@ -47,24 +50,32 @@ if __name__ == "__main__":
                     "model": name, "asset": test.asset.values, "origin": test.date.to_numpy(),
                     "fold": np.repeat(start, len(test)), "h": h, "y": y, "last": last,
                     "sigma": s_te, "rv": test[f"rv{h}"].to_numpy(),
+                    "regime_driver": test.vol_21d.to_numpy(),
                     **{f"q{int(q * 100)}": v for q, v in bands(z, last, s_te, h).items()},
                 }))
                 vol_err.append({"model": name, "h": h,
                                 "mae": np.nanmean(np.abs(truth - np.log(s_te)))})
 
     res = pd.concat(recs, ignore_index=True)
-    summary = score(res)
     save_predictions(res, default_run_dir("tree", feat.date.max(), "baseline"), {
         "pipeline": "daily", "family": "tree", "data_end": feat.date.max(),
         "horizons": H, "folds": res.fold.nunique(),
         "origins": res[["asset", "origin"]].drop_duplicates().shape[0],
         "features": cols,
     })
-    print(f"{len(cols)} features, {len(res) // (len(sig) * H)} origins\n")
+    res.attrs["feature_count"] = len(cols)
+    return res, pd.DataFrame(vol_err)
+
+
+if __name__ == "__main__":
+    res, vol_err = backtest()
+    summary = score(res)
+    origins = res[["asset", "origin"]].drop_duplicates().shape[0]
+    print(f"{res.attrs['feature_count']} features, {origins} origins\n")
     print("VOLATILITY MAE on log realised vol (lower better)")
-    print(pd.DataFrame(vol_err).pivot_table(index="h", columns="model", values="mae").round(4).to_string())
+    print(vol_err.pivot_table(index="h", columns="model", values="mae").round(4).to_string())
     print("\nRESULTING PRICE INTERVALS")
     print(summary.round(2).to_string())
     print("\ncoverage % by horizon day (target 80)")
     print(coverage_by_h(res).round(1).to_string())
-    log("tree", summary, origins=len(res) // (len(sig) * H), features=len(cols))
+    log("tree", summary, origins=origins, features=res.attrs["feature_count"])

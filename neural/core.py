@@ -126,7 +126,7 @@ def backtest(builders):
                 recs.append(pd.DataFrame({
                     "model": name, "asset": test.asset.values, "origin": test.date.to_numpy(),
                     "fold": np.repeat(start, len(test)), "h": h, "y": y, "last": last,
-                    "sigma": sig_te[:, h - 1], "rv": test[f"rv{h}"].to_numpy(),
+                    "sigma": sig_te[:, h - 1], "rv": test[f"rv{h}"].to_numpy(), "regime_driver": test.vol_21d.to_numpy(),
                     **{f"q{int(q * 100)}": v
                        for q, v in bands(z, last, sig_te[:, h - 1], h).items()},
                 }))
