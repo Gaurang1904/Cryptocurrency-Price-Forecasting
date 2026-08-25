@@ -82,7 +82,7 @@ def report(res):
 
     # Direction of the cumulative H-day move, the only call you could trade on.
     end = res[res.h == H]
-    hit = np.sign(end.yhat - end.last) == np.sign(end.y - end.last)
+    hit = np.sign(end.yhat - end["last"]) == np.sign(end.y - end["last"])
     summary["DirAcc"] = hit.groupby(end.model).mean() * 100
 
     per_h = res.pivot_table(index="model", columns="h", values="ape", aggfunc="mean") * 100

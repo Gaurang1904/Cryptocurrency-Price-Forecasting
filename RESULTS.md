@@ -1,7 +1,9 @@
 # Results
 
-All numbers are out-of-sample, walk-forward. Features are verified causal
-(`crypto/features.check_causal` + a corruption test on the 15-min pipeline).
+All numbers are out-of-sample, walk-forward. Daily features are verified causal
+by the executable `crypto.features.check_causal` corruption check. The 15-minute
+pipeline constructs features only from the current and preceding bars, but its
+earlier corruption-check output is not retained in this repository.
 Daily and 15-min are **separate pipelines** — their numbers are not comparable
 to each other and are reported apart.
 
@@ -13,12 +15,13 @@ to each other and are reported apart.
 
 | tested | result |
 |---|---|
-| Price **direction** (up/down) | **No** — ~50% across every model, incl. Transformer |
+| Price **direction** (up/down) | **No robust signal** — results varied by model and short test window |
 | Price **level** | **No** — nothing beats a flat "price stays put" baseline |
 | **Volatility** | **Yes, mildly** — beats a rolling-average baseline, but simple methods capture most of it |
 
-Scaling the models (4× training steps, 2× capacity, 2× lookback) produced **zero
-accuracy gain** — evidence the ceiling is the data, not the model.
+Scaling the LSTM to 4× training steps, 2× capacity, and 2× lookback did not improve
+its recorded accuracy. This is evidence of diminishing returns for that experiment,
+not proof that no model can improve on the data.
 
 ---
 
@@ -42,7 +45,9 @@ sequence input, not depth (DLinear ≈ LSTM).
 
 ## 15-min high-frequency — 2-hour forecast (~1M rows, 16 test origins)
 
-Same config across all four (1000 steps, 96-bar lookback). MAPE is the median
+The table records the initial comparison (1,000 steps, 96-bar lookback); current
+code defaults to 4,000 steps and a 192-bar lookback and therefore requires a fresh
+run before its outputs can replace this table. MAPE is the median
 forecast error; DirAcc is up/down accuracy on the 2-hour move; R² is on **returns**
 (price-R² would be a meaningless ~0.99).
 
@@ -53,11 +58,10 @@ forecast error; DirAcc is up/down accuracy on the 2-hour move; R² is on **retur
 | LSTM | 0.35 | -0.31 | 63.8 | 81.3 |
 | TFT | 0.30 | -0.10 | **48.8** | 65.0 |
 
-**The DirAcc numbers are a test-window artifact, not signal.** Three momentum-
-extrapolating models scored 59-66% by riding a trending 8-day test window; TFT —
-the only model that learns patterns rather than extrapolating — scored **below 50%**.
-Real edge would appear in the most capable model, not vanish from it. A better-
-trained LSTM (4000 steps) also dropped to 52.5%, confirming it.
+**The DirAcc numbers do not establish a robust signal.** They come from a short,
+trending test window and range from 48.8% to 66.2% across architectures. A scaled
+LSTM run dropped to 52.5%, showing that the apparent result was configuration- and
+window-sensitive rather than stable evidence of directional edge.
 
 ---
 
@@ -65,8 +69,8 @@ trained LSTM (4000 steps) also dropped to 52.5%, confirming it.
 
 - **Walk-forward** validation, expanding window — never a single split.
 - **Baselines first** — flat / drift / seasonal; no model is trusted until it beats them.
-- **Causal features** — a corruption test proves no look-ahead (the leak that
-  invalidated the original version of this project).
+- **Causal daily features** — an executable corruption test guards against the
+  look-ahead leak that invalidated the original version of this project.
 - **Conformal calibration** — neural native quantiles are overconfident; empirical
   per-horizon widening restores ~80% coverage.
 

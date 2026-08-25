@@ -1,5 +1,6 @@
 # Ignore data files
 *.csv
+!results_legacy.csv
 *.xlsx
 *.parquet
 data/
@@ -27,3 +28,4 @@ Thumbs.db
 .vscode/
 plots/
 report_by_coin.csv
+.worktrees/
