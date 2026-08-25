@@ -11,11 +11,27 @@ import pandas as pd
 from crypto.data import FUNDING_OUT
 
 H = 7  # forecast horizon in days
-PREFIXES = ("ret_", "vol_", "range", "px_", "btc_", "fund")
+PREFIXES = ("ret_", "vol_", "range", "px_", "btc_", "fund", "drawdown_", "volume_")
 
 
 def feature_cols(feat):
     return [c for c in feat.columns if c.startswith(PREFIXES)]
+
+
+def feature_groups(columns):
+    rules = {
+        "returns": ("ret_", "px_", "drawdown_"),
+        "volatility": ("vol_", "range", "har_"),
+        "volume": ("volume_",),
+        "market": ("btc_",),
+        "funding": ("fund",),
+    }
+    groups = {name: [c for c in columns if c.startswith(prefixes)]
+              for name, prefixes in rules.items()}
+    flattened = [c for members in groups.values() for c in members]
+    assert len(columns) == len(set(columns)), "feature columns contain duplicates"
+    assert sorted(flattened) == sorted(columns), "feature groups must cover each feature once"
+    return groups
 
 
 def make_features(df):
@@ -31,6 +47,10 @@ def make_features(df):
         for w in [5, 10, 21, 63]:
             g[f"ret_{w}d"] = lr.rolling(w).sum()
             g[f"vol_{w}d"] = lr.rolling(w).std()
+        g["vol_regime"] = g["vol_21d"] / g["vol_63d"].clip(lower=1e-6)
+        g["drawdown_63d"] = g.close / g.close.rolling(63).max() - 1
+        lv = np.log(g.volume.replace(0, np.nan))
+        g["volume_z21"] = (lv - lv.rolling(21).mean()) / lv.rolling(21).std()
         g["range"] = (g.high - g.low) / g.close
         g["range_5d"] = g["range"].rolling(5).mean()
         g["vol_ratio"] = g.volume / g.volume.rolling(21).mean()
@@ -98,7 +118,7 @@ def check_causal(df, cols=None):
     bad = df.copy()
     bad.loc[bad.index[-200:], "close"] *= 3
     b = make_features(bad)
-    cut = a.date.max() - pd.Timedelta(days=400)
+    cut = pd.Timestamp(a.date.max()) - pd.DateOffset(days=400)
     a, b = a[a.date < cut], b[b.date < cut]
     shared = [c for c in cols if c in a.columns]
     assert np.allclose(a[shared].fillna(0), b[shared].fillna(0)), "look-ahead in features"
