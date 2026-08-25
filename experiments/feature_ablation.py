@@ -1,6 +1,7 @@
-"""Evaluate XGBoost feature-group ablations on the standard expanding folds.
+"""Explore XGBoost feature-group ablations on the standard expanding folds.
 
-Run: python -m experiments.feature_ablation
+These folds are the feature-selection sample, not untouched post-selection
+validation. Run: python -m experiments.feature_ablation
 """
 
 from pathlib import Path
@@ -32,7 +33,7 @@ def ablation_candidates(cols):
 
 
 def run_ablation(feat, cols):
-    """Return one scored row for each ablation candidate and expanding fold."""
+    """Return exploratory selection-set scores for each candidate and fold."""
     rows = []
     for name, candidate_cols in ablation_candidates(cols).items():
         for train, test, start in run_folds(feat, candidate_cols):
@@ -63,4 +64,4 @@ if __name__ == "__main__":
     table = run_ablation(feat, cols)
     OUT.parent.mkdir(parents=True, exist_ok=True)
     table.to_csv(OUT, index=False)
-    print(f"wrote {len(table)} fold rows to {OUT}")
+    print(f"wrote {len(table)} exploratory selection-set fold rows to {OUT}")

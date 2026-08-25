@@ -1,3 +1,4 @@
+import inspect
 import tempfile
 import unittest
 from pathlib import Path
@@ -31,6 +32,22 @@ class PredictionValidationTests(unittest.TestCase):
             "tree", pd.Timestamp("2026-07-23", tz="UTC"), "baseline", Path("out")
         )
         self.assertEqual(got, Path("out/daily-tree-20260723-baseline"))
+
+    def test_new_run_directory_is_unique_and_rejects_collisions(self):
+        from crypto import evaluation
+
+        self.assertTrue(hasattr(evaluation, "new_run_dir"))
+        with tempfile.TemporaryDirectory(dir=Path.cwd()) as tmp:
+            root = Path(tmp)
+            cutoff = pd.Timestamp("2026-07-23", tz="UTC")
+            first = evaluation.new_run_dir("tree", cutoff, root=root)
+            second = evaluation.new_run_dir("tree", cutoff, root=root)
+            self.assertNotEqual(first, second)
+            self.assertFalse(first.exists())
+            taken = default_run_dir("tree", cutoff, "taken", root)
+            taken.mkdir()
+            with self.assertRaises(FileExistsError):
+                evaluation.new_run_dir("tree", cutoff, "taken", root)
 
     def test_valid_predictions_are_accepted(self):
         validate_predictions(valid_frame())
@@ -147,6 +164,43 @@ class PredictionValidationTests(unittest.TestCase):
         self.assertListEqual(h1.sigma.tolist(), [0.41, 0.49])
         self.assertListEqual(h1.rv.tolist(), [0.011, 0.012])
         self.assertListEqual(h1.regime_driver.tolist(), [0.21, 0.29])
+
+    def test_runner_clis_accept_run_id_and_output_root(self):
+        from neural import run as neural_run
+        from tree import run as tree_run
+
+        for module in (tree_run, neural_run):
+            self.assertTrue(hasattr(module, "parse_args"))
+            args = module.parse_args([
+                "--run-id", "review-1", "--output-root", "custom-output",
+            ])
+            self.assertEqual(args.run_id, "review-1")
+            self.assertEqual(args.output_root, Path("custom-output"))
+
+    def test_runners_reject_output_collisions_before_expensive_work(self):
+        from neural import core
+        from tree import run
+
+        for module in (run, core):
+            self.assertIn("run_id", inspect.signature(module.backtest).parameters)
+            self.assertIn("output_root", inspect.signature(module.backtest).parameters)
+
+        cutoff = pd.Timestamp("2026-07-23", tz="UTC")
+        feat = pd.DataFrame({"date": [cutoff]})
+        with tempfile.TemporaryDirectory(dir=Path.cwd()) as tmp:
+            root = Path(tmp)
+            for tag, module, expensive in (
+                ("tree", run, "run_folds"),
+                ("neural", core, "channel_windows"),
+            ):
+                with self.subTest(tag=tag):
+                    default_run_dir(tag, cutoff, "taken", root).mkdir()
+                    with (patch.object(module, "build", return_value=(feat, [])),
+                          patch.object(module.pd, "read_parquet", return_value=feat),
+                          patch.object(module, expensive,
+                                       side_effect=AssertionError("expensive work started"))):
+                        with self.assertRaises(FileExistsError):
+                            module.backtest({}, run_id="taken", output_root=root)
 
     def test_save_writes_predictions_and_metadata_without_overwrite(self):
         with tempfile.TemporaryDirectory() as tmp:

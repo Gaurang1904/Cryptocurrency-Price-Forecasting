@@ -17,7 +17,7 @@ to each other and are reported apart.
 |---|---|
 | Price **direction** (up/down) | **No robust signal** — results varied by model and short test window |
 | Price **level** | **No** — nothing beats a flat "price stays put" baseline |
-| **Volatility** | **Yes, mildly** — beats a rolling-average baseline, but simple methods capture most of it |
+| **Volatility** | **Modestly lower aggregate loss on this historical selection/evaluation sample** than a rolling-average baseline; horizon-level results are mixed |
 
 Scaling the LSTM to 4× training steps, 2× capacity, and 2× lookback did not improve
 its recorded accuracy. This is evidence of diminishing returns for that experiment,
@@ -27,10 +27,13 @@ not proof that no model can improve on the data.
 
 ## Daily volatility — 7-day interval forecast (1,445 origins, 5 assets)
 
-Historical OOS evaluation: data cutoff **2026-07-23**, forecast origins
-2021-01-01 through 2026-07-14. This is not a current/live forecast. Exact
-provenance, acceptance gates, subgroup tables, and charts are in the
-[daily methodology](docs/evaluation-methodology.md) and
+Historical OOS measurement: data cutoff **2026-07-23**, forecast origins
+2021-01-01 through 2026-07-14. These folds were also consulted for feature and
+ensemble decisions, so they are an exploratory selection/evaluation sample, not
+untouched post-selection validation or a current/live forecast. A locked comparison
+requires future chronological data strictly after the cutoff; rerunning these folds
+does not create an untouched test. Exact provenance, subgroup tables, and charts are
+in the [daily methodology](docs/evaluation-methodology.md) and
 [generated evidence](docs/evaluation/daily-20260723/).
 
 Predict daily volatility, turn it into a calibrated price interval. Lower pinball
@@ -44,8 +47,9 @@ better; coverage target is 80%.
 | LightGBM | tree | 167.69 | 78.8 |
 | vol_21d (baseline) | — | 167.99 | 79.3 |
 
-All models cluster within ~2.9% — near-interchangeable. The neural edge is the
-sequence input, not depth (DLinear ≈ LSTM).
+On this sample, LSTM's aggregate pinball loss is about 2.3% lower than XGBoost's.
+This modest observed difference has no uncertainty interval here, does not identify
+a cause, and is not validated evidence of post-selection generalization.
 
 ---
 
@@ -74,7 +78,7 @@ window-sensitive rather than stable evidence of directional edge.
 ## Method
 
 - **Walk-forward** validation, expanding window — never a single split.
-- **Baselines first** — flat / drift / seasonal; no model is trusted until it beats them.
+- **Baselines first** — candidate measurements are reported beside flat / drift / seasonal baselines.
 - **Causal daily features** — an executable corruption test guards against the
   look-ahead leak that invalidated the original version of this project.
 - **Conformal calibration** — neural native quantiles are overconfident; empirical

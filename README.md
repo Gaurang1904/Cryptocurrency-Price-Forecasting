@@ -19,20 +19,20 @@ experiment log is retained as `results_legacy.csv`.
 
 ## Why intervals, not a price
 
-Three questions, each tested against a dumb baseline before any model was trusted:
+Three questions, each compared with a simple baseline in the historical evidence:
 
 | question | answer | where |
 |---|---|---|
 | Predict direction? | **No robust signal.** Results varied by model and test window. | `RESULTS.md` |
 | Predict the price level? | **No.** LightGBM, XGBoost, ARIMA, SARIMA, Linear Regression all lost to `flat`. | `experiments/baselines.py`, `experiments/classical_price.py` |
-| Predict volatility? | **Yes.** Every model beats the 21-day rolling average at all 7 horizons. | `tree.run`, `neural.run` |
+| Predict volatility? | **On this historical sample, modestly in aggregate.** Individual-horizon comparisons with the 21-day rolling average are mixed. | `docs/evaluation/daily-20260723/metrics_by_horizon.csv` |
 
 So the models predict volatility, and an empirically calibrated quantile table
 turns that into a price interval. Coverage lands near the 80% target.
 
 ---
 
-## Results (deployable models, 1,445 origins)
+## Historical daily measurements (1,445 origins)
 
 These are historical OOS results with data through **2026-07-23** and forecast
 origins through 2026-07-14; they are not a current/live forecast. See the
@@ -46,9 +46,10 @@ origins through 2026-07-14; they are not a current/live forecast. See the
 | xgb | tree | 166.74 | 78.8 |
 | lgbm | tree | 167.69 | 78.8 |
 
-Neural (sequence input) edges the trees (engineered features) by ~2.3% - small, and
-DLinear ≈ LSTM, so the gain is the sequence representation, not depth. All four are
-near-interchangeable; the ceiling is the data, not the model.
+On this selection/evaluation sample, LSTM's aggregate pinball loss is about 2.3%
+lower than XGBoost's. The comparison is small and does not identify a cause or
+validate post-selection generalization; that requires future untouched data after
+the 2026-07-23 cutoff.
 
 The linear family (Ridge, HAR-RV, GARCH) and classical price models (ARIMA, SARIMA)
 are backtested for comparison but not deployed - they refit per series on demand.
@@ -88,9 +89,10 @@ python -m venv .venv
 .\.venv\Scripts\python.exe fetch.py        # pull OHLCV + funding + open interest
 
 # backtest a whole family (scores -> results.csv)
-.\.venv\Scripts\python.exe -m tree.run
+.\.venv\Scripts\python.exe -m tree.run --output-root artifacts/evaluation
 .\.venv\Scripts\python.exe -m linear.run
-.\.venv\Scripts\python.exe -m neural.run
+.\.venv\Scripts\python.exe -m neural.run --output-root artifacts/evaluation
+# tree/neural use an automatic UUID run ID when --run-id is omitted
 
 # train + save + plot one model (artifact -> models/, svg -> plots/)
 .\.venv\Scripts\python.exe -m tree.lgbm
@@ -102,7 +104,7 @@ python -m venv .venv
 .\.venv\Scripts\python.exe predict.py --model lstm
 .\.venv\Scripts\python.exe predict.py --model xgb --asset BTC --horizon 4
 
-# render a non-overwriting daily OOS evaluation bundle (five CSVs, six PNGs)
+# render a non-overwriting bundle (five CSVs, six PNGs, SHA-256 manifest)
 .\.venv\Scripts\python.exe evaluate.py artifacts/evaluation/daily-tree-YYYYMMDD/predictions.parquet artifacts/evaluation/daily-neural-YYYYMMDD/predictions.parquet --out docs/evaluation/daily-YYYYMMDD
 ```
 
@@ -128,7 +130,7 @@ what the data actually does:
 
 ## Rules this repo enforces
 
-1. **Baseline first.** No model ships without beating flat / drift / seasonal.
+1. **Baseline first.** Candidate measurements are always reported beside flat / drift / seasonal baselines.
 2. **Features are causal.** The daily pipeline's `check_causal()` corrupts the last
    200 bars, rebuilds features, and asserts that nothing earlier moved.
 3. **Targets are never features.** The original code fed `target_return_1h` (next-day

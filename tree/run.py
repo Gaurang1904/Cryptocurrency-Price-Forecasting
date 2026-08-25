@@ -4,13 +4,16 @@ Every tree model (LightGBM, XGBoost) plus vol_21d, same folds, same scoring.
 Add a model by dropping one entry in FITTERS.
 """
 
+import argparse
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 
 from crypto.backtest import H, coverage_by_h, log, run_folds, score
 from crypto.data import OHLCV_OUT
 from crypto.ensemble import blend_predictions, select_weight
-from crypto.evaluation import default_run_dir, save_predictions
+from crypto.evaluation import new_run_dir, save_predictions
 from crypto.features import build
 from crypto.model import bands, calibrate, clip_sigma, split_calibration
 from tree.adapter import inputs
@@ -37,8 +40,10 @@ def prediction_frame(name, rows, fold, h, sigma, z):
     })
 
 
-def backtest(fitters=FITTERS):
+def backtest(fitters=FITTERS, run_id=None,
+             output_root=Path("artifacts/evaluation")):
     feat, cols = build(pd.read_parquet(OHLCV_OUT))
+    output_dir = new_run_dir("tree", feat.date.max(), run_id, output_root)
 
     recs, vol_err, blend_weights = [], [], []
     for train, test, start in run_folds(feat, cols):
@@ -77,21 +82,35 @@ def backtest(fitters=FITTERS):
                 })
 
     res = pd.concat(recs, ignore_index=True)
-    save_predictions(res, default_run_dir("tree", feat.date.max(), "baseline"), {
+    save_predictions(res, output_dir, {
         "pipeline": "daily", "family": "tree", "data_end": feat.date.max(),
         "horizons": H, "folds": res.fold.nunique(),
         "origins": res[["asset", "origin"]].drop_duplicates().shape[0],
-        "features": cols,
+        "features": cols, "run_id": run_id,
+        "output_dir": output_dir.as_posix(),
         "blend_weights": blend_weights,
     })
     res.attrs["feature_count"] = len(cols)
+    res.attrs["output_dir"] = output_dir.as_posix()
     return res, pd.DataFrame(vol_err)
 
 
-if __name__ == "__main__":
-    res, vol_err = backtest()
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(description="Run the daily tree backtest.")
+    parser.add_argument("--run-id", help="Unique run label; default is a UUID.")
+    parser.add_argument(
+        "--output-root", type=Path, default=Path("artifacts/evaluation"),
+        help="Parent directory for the non-overwriting run bundle.",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv=None):
+    args = parse_args(argv)
+    res, vol_err = backtest(run_id=args.run_id, output_root=args.output_root)
     summary = score(res)
     origins = res[["asset", "origin"]].drop_duplicates().shape[0]
+    print(f"wrote OOS bundle to {res.attrs['output_dir']}")
     print(f"{res.attrs['feature_count']} features, {origins} origins\n")
     print("VOLATILITY MAE on log realised vol (lower better)")
     print(vol_err.pivot_table(index="h", columns="model", values="mae").round(4).to_string())
@@ -100,3 +119,7 @@ if __name__ == "__main__":
     print("\ncoverage % by horizon day (target 80)")
     print(coverage_by_h(res).round(1).to_string())
     log("tree", summary, origins=origins, features=res.attrs["feature_count"])
+
+
+if __name__ == "__main__":
+    main()

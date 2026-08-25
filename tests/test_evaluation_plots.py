@@ -1,3 +1,5 @@
+import hashlib
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -43,17 +45,84 @@ class EvaluationPlotTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "vol_21d baseline"):
                 render_bundle(valid_frame(), Path(tmp))
 
-    def test_cli_writes_five_metric_tables_and_never_overwrites_output(self):
-        with tempfile.TemporaryDirectory() as tmp:
+    def test_cli_writes_hashed_manifest_and_never_overwrites_output(self):
+        with tempfile.TemporaryDirectory(dir=Path.cwd()) as tmp:
             root = Path(tmp)
-            predictions = root / "predictions.parquet"
-            evaluation_frame().to_parquet(predictions, index=False)
+            tree_dir, neural_dir = root / "tree", root / "neural"
+            tree_dir.mkdir()
+            neural_dir.mkdir()
+            tree_predictions = tree_dir / "predictions.parquet"
+            neural_predictions = neural_dir / "predictions.parquet"
+            tree_frame = evaluation_frame()
+            neural_frame = tree_frame[tree_frame.model == "xgb"].assign(model="lstm")
+            tree_frame.to_parquet(tree_predictions, index=False)
+            neural_frame.to_parquet(neural_predictions, index=False)
+            metadata = {
+                "pipeline": "daily", "data_end": "2025-01-10 00:00:00+00:00",
+                "horizons": 2, "folds": 1, "origins": 3,
+            }
+            (tree_dir / "metadata.json").write_text(
+                json.dumps(metadata | {"family": "tree", "features": ["vol_21d"]})
+            )
+            (neural_dir / "metadata.json").write_text(
+                json.dumps(metadata | {"family": "neural", "lookback": 30})
+            )
+
             out = root / "report"
-            main([str(predictions), "--out", str(out)])
-            self.assertEqual({
+            main([str(tree_predictions), str(neural_predictions), "--out", str(out)])
+
+            csvs = {
                 "metrics_overall.csv", "metrics_by_horizon.csv",
                 "metrics_by_asset.csv", "metrics_by_fold.csv",
                 "metrics_by_regime.csv",
-            }, {path.name for path in out.glob("metrics_*.csv")})
+            }
+            pngs = {
+                "forecast_bands.png", "coverage_by_horizon.png",
+                "pinball_by_model.png", "volatility_fit.png",
+                "performance_by_asset.png", "performance_by_regime.png",
+            }
+            self.assertEqual(csvs, {path.name for path in out.glob("metrics_*.csv")})
+            manifest_path = out / "manifest.json"
+            self.assertTrue(manifest_path.exists())
+            manifest = json.loads(manifest_path.read_text())
+            self.assertEqual(manifest["manifest_version"], 1)
+            self.assertEqual(manifest["hash_algorithm"], "sha256")
+            self.assertEqual(manifest["evaluation"], {
+                "data_cutoff": "2025-01-10T00:00:00+00:00",
+                "oos_start": "2025-01-01T00:00:00+00:00",
+                "oos_end": "2025-01-03T00:00:00+00:00",
+                "folds": ["2025-01-01T00:00:00+00:00"],
+                "fold_count": 1,
+                "distinct_origins": 3,
+                "row_count": 9,
+                "models": ["lstm", "vol_21d", "xgb"],
+                "horizons": [1, 2],
+            })
+            self.assertEqual(
+                {Path(item["path"]).name for item in manifest["inputs"]},
+                {"predictions.parquet"},
+            )
+            self.assertTrue(all(not Path(item["path"]).is_absolute()
+                                for item in manifest["inputs"]))
+            self.assertEqual(
+                {item["metadata"]["family"] for item in manifest["inputs"]},
+                {"tree", "neural"},
+            )
+            for item, expected in zip(
+                manifest["inputs"], [tree_predictions, neural_predictions]
+            ):
+                self.assertEqual(
+                    item["sha256"], hashlib.sha256(expected.read_bytes()).hexdigest()
+                )
+            self.assertEqual(
+                {Path(item["path"]).name for item in manifest["outputs"]},
+                csvs | pngs,
+            )
+            for item in manifest["outputs"]:
+                artifact = Path.cwd() / item["path"]
+                self.assertEqual(
+                    item["sha256"], hashlib.sha256(artifact.read_bytes()).hexdigest()
+                )
             with self.assertRaises(FileExistsError):
-                main([str(predictions), "--out", str(out)])
+                main([str(tree_predictions), str(neural_predictions),
+                      "--out", str(out)])

@@ -1,0 +1,365 @@
+{
+  "manifest_version": 1,
+  "hash_algorithm": "sha256",
+  "evaluation": {
+    "data_cutoff": "2026-07-23T00:00:00+00:00",
+    "oos_start": "2021-01-01T00:00:00+00:00",
+    "oos_end": "2026-07-14T00:00:00+00:00",
+    "folds": [
+      "2021-01-01T00:00:00+00:00",
+      "2022-01-01T00:00:00+00:00",
+      "2023-01-01T00:00:00+00:00",
+      "2024-01-01T00:00:00+00:00",
+      "2025-01-01T00:00:00+00:00",
+      "2026-01-01T00:00:00+00:00"
+    ],
+    "fold_count": 6,
+    "distinct_origins": 1445,
+    "row_count": 60690,
+    "models": [
+      "dlinear",
+      "lgbm",
+      "lstm",
+      "tree_blend",
+      "vol_21d",
+      "xgb"
+    ],
+    "horizons": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ]
+  },
+  "inputs": [
+    {
+      "path": "artifacts/evaluation/daily-tree-20260723-baseline/predictions.parquet",
+      "sha256": "d070e0ffbb58dc8796d018a5933a1ac75bc6dd97b55cb79b293659867e41a629",
+      "metadata": {
+        "pipeline": "daily",
+        "family": "tree",
+        "data_end": "2026-07-23 00:00:00+00:00",
+        "horizons": 7,
+        "folds": 6,
+        "origins": 1445,
+        "features": [
+          "ret_lag1",
+          "ret_lag2",
+          "ret_lag3",
+          "ret_lag5",
+          "ret_lag8",
+          "ret_lag13",
+          "ret_5d",
+          "vol_5d",
+          "ret_10d",
+          "vol_10d",
+          "ret_21d",
+          "vol_21d",
+          "ret_63d",
+          "vol_63d",
+          "vol_regime",
+          "drawdown_63d",
+          "volume_z21",
+          "range",
+          "range_5d",
+          "vol_ratio",
+          "px_vs_ma63",
+          "btc_ret",
+          "btc_ret_5d",
+          "funding_sum",
+          "fund_7d",
+          "fund_21d",
+          "fund_z"
+        ],
+        "blend_weights": [
+          {
+            "fold": "2021-01-01 00:00:00+00:00",
+            "h": 1,
+            "weight": 1.0
+          },
+          {
+            "fold": "2021-01-01 00:00:00+00:00",
+            "h": 2,
+            "weight": 1.0
+          },
+          {
+            "fold": "2021-01-01 00:00:00+00:00",
+            "h": 3,
+            "weight": 0.0
+          },
+          {
+            "fold": "2021-01-01 00:00:00+00:00",
+            "h": 4,
+            "weight": 0.45
+          },
+          {
+            "fold": "2021-01-01 00:00:00+00:00",
+            "h": 5,
+            "weight": 1.0
+          },
+          {
+            "fold": "2021-01-01 00:00:00+00:00",
+            "h": 6,
+            "weight": 1.0
+          },
+          {
+            "fold": "2021-01-01 00:00:00+00:00",
+            "h": 7,
+            "weight": 1.0
+          },
+          {
+            "fold": "2022-01-01 00:00:00+00:00",
+            "h": 1,
+            "weight": 1.0
+          },
+          {
+            "fold": "2022-01-01 00:00:00+00:00",
+            "h": 2,
+            "weight": 1.0
+          },
+          {
+            "fold": "2022-01-01 00:00:00+00:00",
+            "h": 3,
+            "weight": 1.0
+          },
+          {
+            "fold": "2022-01-01 00:00:00+00:00",
+            "h": 4,
+            "weight": 0.75
+          },
+          {
+            "fold": "2022-01-01 00:00:00+00:00",
+            "h": 5,
+            "weight": 0.05
+          },
+          {
+            "fold": "2022-01-01 00:00:00+00:00",
+            "h": 6,
+            "weight": 0.4
+          },
+          {
+            "fold": "2022-01-01 00:00:00+00:00",
+            "h": 7,
+            "weight": 1.0
+          },
+          {
+            "fold": "2023-01-01 00:00:00+00:00",
+            "h": 1,
+            "weight": 1.0
+          },
+          {
+            "fold": "2023-01-01 00:00:00+00:00",
+            "h": 2,
+            "weight": 0.9500000000000001
+          },
+          {
+            "fold": "2023-01-01 00:00:00+00:00",
+            "h": 3,
+            "weight": 0.75
+          },
+          {
+            "fold": "2023-01-01 00:00:00+00:00",
+            "h": 4,
+            "weight": 1.0
+          },
+          {
+            "fold": "2023-01-01 00:00:00+00:00",
+            "h": 5,
+            "weight": 1.0
+          },
+          {
+            "fold": "2023-01-01 00:00:00+00:00",
+            "h": 6,
+            "weight": 1.0
+          },
+          {
+            "fold": "2023-01-01 00:00:00+00:00",
+            "h": 7,
+            "weight": 1.0
+          },
+          {
+            "fold": "2024-01-01 00:00:00+00:00",
+            "h": 1,
+            "weight": 1.0
+          },
+          {
+            "fold": "2024-01-01 00:00:00+00:00",
+            "h": 2,
+            "weight": 0.2
+          },
+          {
+            "fold": "2024-01-01 00:00:00+00:00",
+            "h": 3,
+            "weight": 0.5
+          },
+          {
+            "fold": "2024-01-01 00:00:00+00:00",
+            "h": 4,
+            "weight": 0.75
+          },
+          {
+            "fold": "2024-01-01 00:00:00+00:00",
+            "h": 5,
+            "weight": 0.0
+          },
+          {
+            "fold": "2024-01-01 00:00:00+00:00",
+            "h": 6,
+            "weight": 0.0
+          },
+          {
+            "fold": "2024-01-01 00:00:00+00:00",
+            "h": 7,
+            "weight": 0.0
+          },
+          {
+            "fold": "2025-01-01 00:00:00+00:00",
+            "h": 1,
+            "weight": 1.0
+          },
+          {
+            "fold": "2025-01-01 00:00:00+00:00",
+            "h": 2,
+            "weight": 1.0
+          },
+          {
+            "fold": "2025-01-01 00:00:00+00:00",
+            "h": 3,
+            "weight": 0.35000000000000003
+          },
+          {
+            "fold": "2025-01-01 00:00:00+00:00",
+            "h": 4,
+            "weight": 0.15000000000000002
+          },
+          {
+            "fold": "2025-01-01 00:00:00+00:00",
+            "h": 5,
+            "weight": 1.0
+          },
+          {
+            "fold": "2025-01-01 00:00:00+00:00",
+            "h": 6,
+            "weight": 1.0
+          },
+          {
+            "fold": "2025-01-01 00:00:00+00:00",
+            "h": 7,
+            "weight": 0.65
+          },
+          {
+            "fold": "2026-01-01 00:00:00+00:00",
+            "h": 1,
+            "weight": 0.7000000000000001
+          },
+          {
+            "fold": "2026-01-01 00:00:00+00:00",
+            "h": 2,
+            "weight": 0.5
+          },
+          {
+            "fold": "2026-01-01 00:00:00+00:00",
+            "h": 3,
+            "weight": 1.0
+          },
+          {
+            "fold": "2026-01-01 00:00:00+00:00",
+            "h": 4,
+            "weight": 0.55
+          },
+          {
+            "fold": "2026-01-01 00:00:00+00:00",
+            "h": 5,
+            "weight": 0.8500000000000001
+          },
+          {
+            "fold": "2026-01-01 00:00:00+00:00",
+            "h": 6,
+            "weight": 0.0
+          },
+          {
+            "fold": "2026-01-01 00:00:00+00:00",
+            "h": 7,
+            "weight": 1.0
+          }
+        ]
+      },
+      "metadata_path": "artifacts/evaluation/daily-tree-20260723-baseline/metadata.json",
+      "metadata_sha256": "98f891a135f7af95c00882936823988e3deb5a89603e0152d0b999b665d8417d"
+    },
+    {
+      "path": "artifacts/evaluation/daily-neural-20260723-baseline/predictions.parquet",
+      "sha256": "25bdba7fe492f715f003f4e32713ece16450235a97e8ba9e942a20b5ae49df2b",
+      "metadata": {
+        "pipeline": "daily",
+        "family": "neural",
+        "data_end": "2026-07-23 00:00:00+00:00",
+        "horizons": 7,
+        "folds": 6,
+        "origins": 1445,
+        "models": [
+          "dlinear",
+          "lstm"
+        ],
+        "lookback": 30,
+        "channels": [
+          "r",
+          "ar",
+          "rng",
+          "dv"
+        ]
+      },
+      "metadata_path": "artifacts/evaluation/daily-neural-20260723-baseline/metadata.json",
+      "metadata_sha256": "f7dbac5b2fd93cec8edec22085ff358ed0d80d29d6cbae9eb8d8ed8bd75664f3"
+    }
+  ],
+  "outputs": [
+    {
+      "path": "docs/evaluation/daily-20260723/coverage_by_horizon.png",
+      "sha256": "5461db24bbbb767e8093b0f0de26f6cb6ac89c88e952708818a57c6bf7c7f12b"
+    },
+    {
+      "path": "docs/evaluation/daily-20260723/forecast_bands.png",
+      "sha256": "53f53fa6995a17818c9c0a402abc9289c3511ea32d52bad2f8a616a64831b4a2"
+    },
+    {
+      "path": "docs/evaluation/daily-20260723/metrics_by_asset.csv",
+      "sha256": "64ade5b7bc9152a2f107b6b171b253fc71d7bf87fc3226171caae668a71fa6a4"
+    },
+    {
+      "path": "docs/evaluation/daily-20260723/metrics_by_fold.csv",
+      "sha256": "cabfb64bcbea22bd2e0086f5edb9b31497034b4fc1e6706dbf291f53b6847b0f"
+    },
+    {
+      "path": "docs/evaluation/daily-20260723/metrics_by_horizon.csv",
+      "sha256": "d71fc87aaf7d26e24bc08c0683fc959470c958a6b8bf7d8c684a92c783013dc1"
+    },
+    {
+      "path": "docs/evaluation/daily-20260723/metrics_by_regime.csv",
+      "sha256": "22a81b23620dbf795dcc9e308e2d285c906653251358531cb55c9282f0007f1d"
+    },
+    {
+      "path": "docs/evaluation/daily-20260723/metrics_overall.csv",
+      "sha256": "b626b31942b4d53ce5603a1cc22f66c990513aafb270ef8e92791eef4a90e947"
+    },
+    {
+      "path": "docs/evaluation/daily-20260723/performance_by_asset.png",
+      "sha256": "56f79718b572e477afe94171d456ae43dcbbded8097998eb2fb819a7a9617d10"
+    },
+    {
+      "path": "docs/evaluation/daily-20260723/performance_by_regime.png",
+      "sha256": "5945d26d1dade4f66c2ff5e8ae9340b84bf18ddb5856f850b8442d8ad5ef583f"
+    },
+    {
+      "path": "docs/evaluation/daily-20260723/pinball_by_model.png",
+      "sha256": "d9d88ff40cafe4305d02e90315e0b149dddf733c36063a0ba33e966265e0fc2a"
+    },
+    {
+      "path": "docs/evaluation/daily-20260723/volatility_fit.png",
+      "sha256": "70354f32729a8e73bd503a1887ef589df3b51d9b86ebc892cc35e1f18da60665"
+    }
+  ]
+}

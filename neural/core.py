@@ -15,7 +15,7 @@ from numpy.lib.stride_tricks import sliding_window_view
 
 from crypto.backtest import H, run_folds, score, coverage_by_h, log
 from crypto.features import build
-from crypto.evaluation import default_run_dir, save_predictions
+from crypto.evaluation import new_run_dir, save_predictions
 from crypto.model import bands, calibrate, clip_sigma, split_calibration
 
 LOOKBACK = 30
@@ -93,9 +93,11 @@ def _predict(model, X):
         return model(torch.tensor(X, dtype=torch.float32)).numpy()
 
 
-def backtest(builders):
+def backtest(builders, run_id=None,
+             output_root=Path("artifacts/evaluation")):
     """builders: {name: fn(C) -> nn.Module}. Returns scored results DataFrame."""
     feat, _ = build(pd.read_parquet("data/ohlcv.parquet"))
+    output_dir = new_run_dir("neural", feat.date.max(), run_id, output_root)
     win, index = channel_windows(feat)
     ytargets = [f"rv{h}" for h in range(1, H + 1)]
 
@@ -135,12 +137,14 @@ def backtest(builders):
                                 "mae": np.nanmean(np.abs(truth - np.log(sig_te[:, h - 1])))})
 
     res = pd.concat(recs, ignore_index=True)
-    save_predictions(res, default_run_dir("neural", feat.date.max(), "baseline"), {
+    save_predictions(res, output_dir, {
         "pipeline": "daily", "family": "neural", "data_end": feat.date.max(),
         "horizons": H, "folds": res.fold.nunique(),
         "origins": res[["asset", "origin"]].drop_duplicates().shape[0],
         "models": list(builders), "lookback": LOOKBACK, "channels": CHANNELS,
+        "run_id": run_id, "output_dir": output_dir.as_posix(),
     })
+    res.attrs["output_dir"] = output_dir.as_posix()
     return res, pd.DataFrame(vol_err)
 
 

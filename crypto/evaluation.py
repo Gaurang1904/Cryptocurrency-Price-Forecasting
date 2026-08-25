@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from uuid import uuid4
 
 import numpy as np
 import pandas as pd
@@ -17,6 +18,14 @@ KEY = ["model", "asset", "origin", "h"]
 def default_run_dir(tag, data_end, run_id, root=Path("artifacts/evaluation")):
     stamp = pd.Timestamp(data_end).strftime("%Y%m%d")
     return Path(root) / f"daily-{tag}-{stamp}-{run_id}"
+
+
+def new_run_dir(tag, data_end, run_id=None, root=Path("artifacts/evaluation")):
+    run_id = run_id or uuid4().hex[:12]
+    output_dir = default_run_dir(tag, data_end, run_id, root)
+    if output_dir.exists():
+        raise FileExistsError(f"run directory already exists: {output_dir}")
+    return output_dir
 
 
 def validate_predictions(frame):

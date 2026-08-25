@@ -55,7 +55,7 @@ Commands:
 The evaluator exited 0 and used a previously absent output directory. It did
 not overwrite any prior report.
 
-## Raw result summaries and decisions
+## Raw result summaries and exploratory comparisons
 
 ### Feature ablation
 
@@ -75,18 +75,22 @@ maximum fold `pinball_%`.
 | without_market | 1.479464 | 2.260984 | 78.843302 |
 | without_returns | 1.492380 | 2.314026 | 79.041028 |
 
-Binding decision: retain `all` because it beats `legacy` on both overall
-normalized pinball (1.472134 < 1.475972) and worst-fold normalized pinball
-(2.228898 < 2.238526), while combined OOS coverage is inside 78-82%.
+Exploratory selection-set observation: `all` measured lower loss than `legacy`
+on both overall normalized pinball (1.472134 < 1.475972) and worst-fold
+normalized pinball (2.228898 < 2.238526), while combined OOS coverage was inside
+78-82%. This comparison was consulted before the later tree run, so it is not
+untouched post-selection validation and does not establish a confirmed feature
+improvement or locked configuration.
 
-The parent ruling confirmed that the coverage gate uses combined OOS coverage,
-while fold/asset/horizon coverage remains published. `without_funding` is an
-exploratory future candidate, not a post-hoc replacement after searching these
-same folds.
+The parent ruling confirmed that the descriptive coverage gate uses combined OOS
+coverage, while fold/asset/horizon coverage remains published. `without_funding`
+is another exploratory same-fold result, not a post-hoc replacement. Any locked
+comparison requires future chronological data strictly after 2026-07-23; rerunning
+these folds does not create an untouched test.
 
-### Saved tree rebuilds
+### Saved tree rebuilds using the `all` candidate
 
-Both retained-feature rebuilds completed on 9,182 fit rows plus 2,300
+Both tree rebuilds using the `all` candidate completed on 9,182 fit rows plus 2,300
 calibration rows, 27 features, five assets, and data through 2026-07-23.
 
 - LightGBM saved `models/vol7d.joblib` and its ignored split plot.
@@ -136,6 +140,9 @@ same 1,445 origins and persisted 10,115 rows for each model.
 - Six PNGs: forecast bands, horizon coverage, model pinball, volatility fit,
   asset performance, and regime performance.
 - Five CSVs: overall, by horizon, by asset, by fold, and by regime.
+- One `manifest.json`: repository-relative paths and SHA-256 hashes for all
+  eleven generated files and both input prediction Parquets, plus hashes and
+  embedded configuration for their metadata files.
 
 All six PNGs were visually inspected after ACL-safe thumbnail rendering. Titles,
 axes, legends, the 1,445-origin sample size, and the 2021-01-01 to 2026-07-14
@@ -148,7 +155,7 @@ rows, six models, seven horizons, six folds, and 1,445 unique asset/origin pairs
 
 Created `docs/evaluation-methodology.md` with the exact cutoff, asset/sample
 provenance, fit/calibration/test boundaries for all six folds, model
-configurations, commands, acceptance decisions, and caveats.
+configurations, commands, exploratory candidate comparisons, and caveats.
 
 `README.md` and `RESULTS.md` were updated only from
 `metrics_overall.csv`. Public rounded values are:
@@ -209,7 +216,7 @@ Public documentation/evidence:
 - `README.md`
 - `RESULTS.md`
 - `docs/evaluation-methodology.md`
-- `docs/evaluation/daily-20260723/` (six PNGs, five metric CSVs)
+- `docs/evaluation/daily-20260723/` (six PNGs, five metric CSVs, manifest)
 - this report
 
 Raw reproducibility evidence:
@@ -220,8 +227,9 @@ Raw reproducibility evidence:
 
 ## Concerns
 
-- Feature acceptance reused the reported OOS folds; there is no untouched
-  post-selection holdout. The small `all` versus `legacy` gain may be optimistic.
+- Feature and ensemble comparisons reused the reported OOS folds; they are
+  exploratory selection-set evidence, not an untouched post-selection holdout.
+  A locked configuration needs future chronological data after 2026-07-23.
 - `without_funding` was best in the exploratory group removals and warrants a
   separately preregistered future test.
 - Overall coverage is inside the target band, but subgroup coverage varies; the
@@ -230,3 +238,106 @@ Raw reproducibility evidence:
   current/live forecast quality.
 - The ensemble failed its acceptance gate and is retained only as negative
   evidence.
+
+## Round 1/5 review fixes
+
+Review fixes were implemented on top of Task 7 commit `6f84f95`.
+
+### Publication posture
+
+- `experiments/feature_ablation.py` now labels every ablation row as
+  exploratory selection-set evidence.
+- `README.md`, `RESULTS.md`, and `docs/evaluation-methodology.md` remove the
+  feature-retention/deployability and causal sequence/data-ceiling claims.
+- The public 2.3% statement is now only the measured aggregate LSTM-versus-XGBoost
+  difference on this sample, with no causal or post-selection-generalization claim.
+- The volatility headline now says aggregate losses were modestly lower while
+  by-horizon comparisons were mixed.
+- The methodology states that future chronological data strictly after
+  2026-07-23 is required to validate a locked configuration, and that rerunning
+  the same folds does not repair the selection-set limitation.
+
+### Provenance and non-overwriting runners
+
+- `evaluate.py` now requires each prediction Parquet's sibling `metadata.json`
+  before creating the output directory.
+- It writes `manifest.json` with SHA-256 for five CSVs, six PNGs, two input
+  prediction Parquets, and both metadata files. The manifest records repository-
+  relative paths, embedded run configuration, cutoff, OOS start/end, six fold
+  origins, 1,445 distinct asset/origins, 60,690 rows, six models, and horizons 1-7.
+- `tree.run` and `neural.run` accept `--run-id` and `--output-root`. If no run ID
+  is supplied, a 12-character UUID suffix is generated. Explicit collisions fail
+  after the cutoff/feature load and before fold fitting or neural window creation.
+- The evaluator remains non-overwriting, and the methodology gives UUID-based
+  commands for collision-free reruns without deleting prior work.
+
+### TDD evidence
+
+RED commands were run before their implementations:
+
+```text
+python -m unittest tests.test_evaluation_plots.EvaluationPlotTests.test_cli_writes_hashed_manifest_and_never_overwrites_output -v
+FAIL: manifest.json did not exist
+
+python -m unittest tests.test_evaluation.PredictionValidationTests.test_new_run_directory_is_unique_and_rejects_collisions -v
+FAIL: crypto.evaluation had no new_run_dir
+
+python -m unittest tests.test_evaluation.PredictionValidationTests.test_runners_reject_output_collisions_before_expensive_work -v
+FAIL: runner backtest signatures lacked run_id/output_root
+
+python -m unittest tests.test_evaluation.PredictionValidationTests.test_runner_clis_accept_run_id_and_output_root -v
+FAIL: runner modules had no parse_args
+```
+
+Focused GREEN:
+
+```text
+C:\Users\gaura\VSCode\PredictionModel\Prediction-Model\.venv\Scripts\python.exe -m unittest tests.test_evaluation tests.test_evaluation_plots tests.test_ensemble -v
+Ran 24 tests in 3.795s
+OK
+```
+
+### Bundle regeneration and integrity
+
+The published directory was moved to an exact sibling backup, regenerated through
+the non-overwriting evaluator at its canonical path, cryptographically validated,
+and only then was that temporary backup removed. The evaluator command was:
+
+```powershell
+& 'C:\Users\gaura\VSCode\PredictionModel\Prediction-Model\.venv\Scripts\python.exe' evaluate.py artifacts/evaluation/daily-tree-20260723-baseline/predictions.parquet artifacts/evaluation/daily-neural-20260723-baseline/predictions.parquet --out docs/evaluation/daily-20260723
+```
+
+Observed regeneration/validation summary:
+
+```text
+inputs=2 outputs=11 rows=60690 origins=1445 folds=6
+data_cutoff=2026-07-23T00:00:00+00:00
+oos=2021-01-01T00:00:00+00:00..2026-07-14T00:00:00+00:00
+models=dlinear,lgbm,lstm,tree_blend,vol_21d,xgb
+all recorded SHA-256 hashes matched
+```
+
+### Round 1 verification
+
+```text
+C:\Users\gaura\VSCode\PredictionModel\Prediction-Model\.venv\Scripts\python.exe -m unittest discover -s tests -v
+Ran 30 tests in 3.085s
+OK
+
+C:\Users\gaura\VSCode\PredictionModel\Prediction-Model\.venv\Scripts\python.exe -m compileall -q crypto tree linear neural experiments fetch.py predict.py evaluate.py
+exit 0
+
+artifact integrity validator
+PASS: 2 inputs, 11 outputs, 60,690 rows, 1,445 origins; every content hash and metadata hash matched
+
+documentation reference validator
+PASS: 17 local references
+
+published bundle validator
+PASS: exactly 5 metric CSVs, 6 PNGs, and manifest.json
+
+unsupported-claim scan
+PASS: targeted false headline, causal-attribution, retention, and deployability patterns are absent
+```
+
+`git diff --check` exited 0 apart from Git's Windows line-ending warnings.
