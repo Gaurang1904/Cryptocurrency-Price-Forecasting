@@ -1,7 +1,17 @@
 import unittest
+
+import numpy as np
 import pandas as pd
 
-from neural.tft_data import complete_ohlcv_grid, validate_ohlcv_15m
+from neural.tft_data import (
+    HIST_EXOG,
+    PreparedTFTData,
+    assert_tft_feature_causality,
+    complete_ohlcv_grid,
+    eligible_daily_origins,
+    prepare_tft_data,
+    validate_ohlcv_15m,
+)
 
 
 def tiny_raw():
@@ -93,3 +103,61 @@ class TftDataContractTests(unittest.TestCase):
         raw.loc[0, "close"] = "100.0"
         with self.assertRaisesRegex(ValueError, "finite"):
             validate_ohlcv_15m(raw, assets=("BTC", "ETH"), as_of=pd.Timestamp("2026-01-01 01:00Z"))
+
+
+def long_raw_fixture(assets=("BTC", "ETH"), periods=14 * 96):
+    dates = pd.date_range("2025-12-20", periods=periods, freq="15min", tz="UTC")
+    rows = []
+    for index, asset in enumerate(assets, start=1):
+        close = index * 100 + np.arange(periods) * 0.01
+        rows.append(pd.DataFrame({
+            "asset": asset, "date": dates, "open": close,
+            "high": close * 1.001, "low": close * 0.999,
+            "close": close, "volume": 10 + np.arange(periods) % 7,
+        }))
+    raw = pd.concat(rows, ignore_index=True)
+    return raw, pd.Timestamp("2025-12-28 23:45Z"), dates[-1] + pd.Timedelta("15min")
+
+
+def prepared_fixture_with_one_missing_target_bar():
+    raw, _, as_of = long_raw_fixture()
+    raw = raw[raw.date != pd.Timestamp("2026-01-02 12:00Z")].reset_index(drop=True)
+    return prepare_tft_data(raw, assets=("BTC", "ETH"), as_of=as_of)
+
+
+class TftFeatureTests(unittest.TestCase):
+    def test_prepared_frame_has_exact_causal_features_and_daily_endpoint(self):
+        dates = pd.date_range("2025-12-20", periods=800, freq="15min", tz="UTC")
+        rows = []
+        for asset, scale in (("BTC", 1.0), ("ETH", 2.0)):
+            close = scale * (100 + np.arange(len(dates)) * 0.01)
+            rows.append(pd.DataFrame({
+                "asset": asset, "date": dates, "open": close,
+                "high": close * 1.001, "low": close * 0.999,
+                "close": close, "volume": 10 + np.arange(len(dates)) % 7,
+            }))
+        prepared = prepare_tft_data(
+            pd.concat(rows), assets=("BTC", "ETH"),
+            as_of=pd.Timestamp("2026-01-01 12:00Z"),
+        )
+        self.assertIsInstance(prepared, PreparedTFTData)
+        self.assertEqual(set(HIST_EXOG) - set(prepared.model_frame), set())
+        self.assertEqual(prepared.model_frame.ds.max().strftime("%H:%M"), "23:45")
+        self.assertTrue(np.isfinite(prepared.model_frame[list(HIST_EXOG)]).all().all())
+
+    def test_target_origins_crossing_synthetic_bars_are_excluded_for_all_assets(self):
+        prepared = prepared_fixture_with_one_missing_target_bar()
+        origins = eligible_daily_origins(prepared.context_frame, horizon=96)
+        affected = pd.Timestamp("2026-01-02 00:00Z")
+        self.assertNotIn(affected, origins)
+
+    def test_empty_origins_keep_utc_timezone(self):
+        context = pd.DataFrame(columns=("asset", "ds", "missing_bar"))
+        origins = eligible_daily_origins(context, horizon=96)
+        self.assertEqual(str(origins.tz), "UTC")
+
+    def test_future_corruption_does_not_change_past_features(self):
+        raw, cutoff, as_of = long_raw_fixture()
+        assert_tft_feature_causality(
+            raw, cutoff=cutoff, assets=("BTC", "ETH"), as_of=as_of,
+        )
