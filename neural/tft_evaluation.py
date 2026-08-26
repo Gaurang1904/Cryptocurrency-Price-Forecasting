@@ -1,6 +1,8 @@
 import numpy as np
 import pandas as pd
 
+from crypto.backtest import score
+
 
 FORECAST_KEY = ["asset", "origin", "h"]
 KEY = ["model", *FORECAST_KEY]
@@ -163,3 +165,136 @@ def make_tft_baselines(reference):
     baselines = pd.concat(frames, ignore_index=True)
     validate_tft_forecasts(baselines, expected_horizons)
     return baselines
+
+
+def _higher_quantile(values, level):
+    return float(np.quantile(np.asarray(values), min(level, 1.0), method="higher"))
+
+
+def calibrate_tft_intervals(calibration, test, alpha=0.20):
+    if not 0 < alpha < 1:
+        raise ValueError("alpha must be between zero and one")
+    validate_tft_forecasts(calibration, expected_horizons=sorted(calibration.h.unique()))
+    validate_tft_forecasts(test, expected_horizons=sorted(test.h.unique()))
+    calibration_models = calibration.model.drop_duplicates().tolist()
+    test_models = test.model.drop_duplicates().tolist()
+    if len(calibration_models) != 1 or calibration_models != test_models:
+        raise ValueError("calibration and test must use the same single model")
+
+    missing = sorted(set(test.h.unique()) - set(calibration.h.unique()))
+    if missing:
+        raise ValueError(f"calibration rows missing for horizon {missing[0]}")
+
+    adjusted = test.copy()
+    for horizon in sorted(test.h.unique()):
+        cal_h = calibration.loc[calibration.h.eq(horizon)]
+        n = len(cal_h)
+        level = min(1.0, np.ceil((n + 1) * (1 - alpha / 2)) / n)
+        lower_scores = np.log(cal_h.q10) - np.log(cal_h.y)
+        upper_scores = np.log(cal_h.y) - np.log(cal_h.q90)
+        lower = max(0.0, _higher_quantile(lower_scores, level))
+        upper = max(0.0, _higher_quantile(upper_scores, level))
+        mask = adjusted.h.eq(horizon)
+        adjusted.loc[mask, "q10"] *= np.exp(-lower)
+        adjusted.loc[mask, "q90"] *= np.exp(upper)
+    adjusted["model"] = "tft_calibrated"
+    validate_tft_forecasts(adjusted, expected_horizons=sorted(test.h.unique()))
+    return adjusted
+
+
+def fit_regime_cutpoints(calibration):
+    required = ["asset", "origin", "regime_driver"]
+    missing = [column for column in required if column not in calibration]
+    if missing:
+        raise ValueError(f"missing calibration columns: {missing}")
+    drivers = calibration[required].drop_duplicates()
+    values = pd.to_numeric(drivers.regime_driver, errors="coerce")
+    if values.empty or values.isna().any() or not np.isfinite(values.to_numpy()).all():
+        raise ValueError("calibration regime_driver values must be finite")
+    low, high = values.quantile([1 / 3, 2 / 3])
+    return float(low), float(high)
+
+
+def apply_regimes(frame, cutpoints):
+    low, high = cutpoints
+    labelled = frame.copy()
+    labelled["regime"] = np.select(
+        [labelled.regime_driver <= low, labelled.regime_driver <= high],
+        ["low", "medium"], default="high",
+    )
+    return labelled
+
+
+def _direction_interval(group, bootstrap_samples, seed):
+    origins = group.origin.drop_duplicates().to_numpy()
+    rng = np.random.default_rng(seed)
+    hits = np.sign(group.q50 / group["last"] - 1) == np.sign(
+        group.y / group["last"] - 1
+    )
+    clusters = pd.DataFrame({"origin": group.origin, "hit": hits}).groupby(
+        "origin", sort=False,
+    ).hit.agg(["sum", "count"]).reindex(origins)
+    sampled = rng.choice(
+        len(origins), size=(bootstrap_samples, len(origins)), replace=True,
+    )
+    estimates = (
+        clusters["sum"].to_numpy()[sampled].sum(axis=1)
+        / clusters["count"].to_numpy()[sampled].sum(axis=1)
+        * 100
+    )
+    return np.quantile(estimates, [0.025, 0.975])
+
+
+def headline_metrics(frame, bootstrap_samples=2000, seed=42):
+    final = frame.loc[frame.h.eq(96)].copy()
+    if final.empty:
+        raise ValueError("headline metrics require h=96 rows")
+    diagnostics = []
+    for model, group in final.groupby("model", sort=True):
+        actual = group.y.to_numpy() / group["last"].to_numpy() - 1
+        predicted = group.q50.to_numpy() / group["last"].to_numpy() - 1
+        residual = np.sum((actual - predicted) ** 2)
+        total = np.sum((actual - actual.mean()) ** 2)
+        low, high = _direction_interval(group, bootstrap_samples, seed)
+        diagnostics.append({
+            "model": model,
+            "return_mae": np.mean(np.abs(actual - predicted)),
+            "return_r2": 1 - residual / total if total > 0 else np.nan,
+            "return_correlation": np.corrcoef(actual, predicted)[0, 1],
+            "direction_accuracy": np.mean(
+                np.sign(predicted) == np.sign(actual)
+            ) * 100,
+            "direction_ci_low": low,
+            "direction_ci_high": high,
+        })
+    return score(final).join(pd.DataFrame(diagnostics).set_index("model"))
+
+
+def grouped_interval_metrics(frame, keys):
+    rows = []
+    for values, group in frame.groupby(keys, sort=True):
+        values = values if isinstance(values, tuple) else (values,)
+        metrics = score(group).reset_index().iloc[0].to_dict()
+        rows.append(dict(zip(keys, values)) | metrics)
+    return pd.DataFrame(rows).set_index(keys)
+
+
+def grouped_headline_metrics(frame, keys):
+    rows = []
+    for values, group in frame.groupby(keys, sort=True):
+        values = values if isinstance(values, tuple) else (values,)
+        metrics = headline_metrics(group).reset_index().iloc[0].to_dict()
+        rows.append(dict(zip(keys, values)) | metrics)
+    return pd.DataFrame(rows).set_index(keys)
+
+
+def tft_metric_tables(calibration, test):
+    cutpoints = fit_regime_cutpoints(calibration)
+    return {
+        "overall": headline_metrics(test),
+        "by_horizon": grouped_interval_metrics(test, ["model", "h"]),
+        "by_asset": grouped_headline_metrics(test, ["model", "asset"]),
+        "by_regime": grouped_headline_metrics(
+            apply_regimes(test, cutpoints), ["model", "regime"],
+        ),
+    }

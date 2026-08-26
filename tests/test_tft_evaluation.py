@@ -4,7 +4,9 @@ import numpy as np
 import pandas as pd
 
 from neural.tft_evaluation import (
-    make_tft_baselines, split_calibration_test,
+    apply_regimes, calibrate_tft_intervals, fit_regime_cutpoints,
+    headline_metrics, make_tft_baselines, split_calibration_test,
+    tft_metric_tables,
     to_tft_forecasts, validate_tft_forecasts,
 )
 
@@ -54,6 +56,37 @@ def forecast_fixture(origins=4, horizons=3, assets=("BTC", "ETH")):
                     "q90": predicted * 1.02,
                 })
     return pd.DataFrame(rows), origin_index
+
+
+def asymmetric_interval_fixture():
+    frame, _ = forecast_fixture(origins=8, horizons=2, assets=("BTC",))
+    ordered = sorted(frame.origin.unique())
+    calibration = frame[frame.origin.isin(ordered[:5])].copy().assign(split="calibration")
+    test = frame[frame.origin.isin(ordered[5:])].copy().assign(split="test")
+    calibration.loc[:, "y"] = 100.0
+    calibration.loc[:, "q10"] = 101.0
+    calibration.loc[:, "q50"] = 102.0
+    calibration.loc[:, "q90"] = 104.0
+    return calibration, test
+
+
+def metric_fixture_with_price_level_trend():
+    origins = pd.date_range("2025-01-01", periods=30, freq="D", tz="UTC")
+    rows = []
+    for model in ("good_returns", "bad_returns"):
+        for index, origin in enumerate(origins):
+            last = 1000.0 + index * 10
+            actual_return = 0.01 if index % 2 == 0 else -0.01
+            predicted_return = actual_return if model == "good_returns" else -actual_return
+            actual, median = last * (1 + actual_return), last * (1 + predicted_return)
+            rows.append({
+                "model": model, "asset": "BTC", "origin": origin,
+                "target_time": origin + pd.Timedelta("1D"), "split": "test",
+                "h": 96, "y": actual, "last": last, "regime_driver": 0.02,
+                "origin_sigma": 0.001, "origin_momentum": 0.0,
+                "q10": median * 0.98, "q50": median, "q90": median * 1.02,
+            })
+    return pd.DataFrame(rows)
 
 
 class TftForecastFrameTests(unittest.TestCase):
@@ -112,3 +145,104 @@ class TftForecastFrameTests(unittest.TestCase):
                     frame.loc[frame.index[0], column] = value
                     with self.assertRaisesRegex(ValueError, "strictly positive"):
                         validate_tft_forecasts(frame, expected_horizons=(1, 2, 3))
+
+
+class TftCalibrationMetricTests(unittest.TestCase):
+    def test_calibration_uses_only_calibration_rows_and_never_tightens(self):
+        calibration, test = asymmetric_interval_fixture()
+        first = calibrate_tft_intervals(calibration, test, alpha=0.20)
+        corrupted = test.assign(y=test.y * 100)
+        second = calibrate_tft_intervals(calibration, corrupted, alpha=0.20)
+        np.testing.assert_allclose(first.q10, second.q10)
+        np.testing.assert_allclose(first.q90, second.q90)
+        self.assertTrue((first.q10 <= test.q10).all())
+        self.assertTrue((first.q90 >= test.q90).all())
+        self.assertNotEqual(
+            np.log(test.q10.iloc[0]) - np.log(first.q10.iloc[0]),
+            np.log(first.q90.iloc[0]) - np.log(test.q90.iloc[0]),
+        )
+
+    def test_calibration_preserves_median_and_requires_matching_model(self):
+        calibration, test = asymmetric_interval_fixture()
+        calibrated = calibrate_tft_intervals(calibration, test, alpha=0.20)
+        np.testing.assert_allclose(calibrated.q50, test.q50)
+        with self.assertRaisesRegex(ValueError, "same single model"):
+            calibrate_tft_intervals(
+                calibration.assign(model="other"), test, alpha=0.20,
+            )
+
+    def test_calibration_requires_rows_for_every_test_horizon(self):
+        calibration, test = asymmetric_interval_fixture()
+        with self.assertRaisesRegex(ValueError, "horizon 2"):
+            calibrate_tft_intervals(
+                calibration.loc[calibration.h.eq(1)], test, alpha=0.20,
+            )
+
+    def test_headline_metrics_use_only_horizon_96_and_return_r_squared(self):
+        frame = metric_fixture_with_price_level_trend()
+        metrics = headline_metrics(frame, bootstrap_samples=200, seed=42)
+        self.assertEqual(set(metrics.index), set(frame.model))
+        self.assertIn("pinball_%", metrics)
+        self.assertIn("direction_accuracy", metrics)
+        self.assertIn("direction_ci_low", metrics)
+        self.assertIn("return_r2", metrics)
+        self.assertLess(metrics.loc["bad_returns", "return_r2"], 0)
+
+    def test_headline_metrics_reject_frames_without_next_day_rows(self):
+        frame = metric_fixture_with_price_level_trend().assign(h=95)
+        with self.assertRaisesRegex(ValueError, "h=96"):
+            headline_metrics(frame)
+
+    def test_direction_interval_resamples_complete_multi_asset_origins(self):
+        origins = pd.date_range("2025-01-01", periods=4, freq="D", tz="UTC")
+        rows = []
+        for index, origin in enumerate(origins):
+            for asset in ("BTC", "ETH"):
+                actual = 101.0 if asset == "BTC" else 102.0
+                if index < 2:
+                    median = 100.5 if asset == "BTC" else 101.5
+                else:
+                    median = 99.0 if asset == "BTC" else 98.5
+                rows.append({
+                    "model": "m", "asset": asset, "origin": origin, "h": 96,
+                    "y": actual, "last": 100.0, "q10": 90.0,
+                    "q50": median, "q90": 110.0,
+                })
+        metrics = headline_metrics(
+            pd.DataFrame(rows), bootstrap_samples=200, seed=7,
+        )
+        self.assertEqual(metrics.loc["m", "direction_ci_low"], 0.0)
+        self.assertEqual(metrics.loc["m", "direction_ci_high"], 100.0)
+
+    def test_regimes_use_unique_calibration_origins_and_fixed_cutpoints(self):
+        calibration = pd.DataFrame({
+            "asset": ["BTC", "BTC", "BTC", "BTC", "BTC", "ETH", "SOL"],
+            "origin": pd.to_datetime([
+                "2025-01-01", "2025-01-01", "2025-01-01", "2025-01-01",
+                "2025-01-01", "2025-01-02", "2025-01-03",
+            ], utc=True),
+            "regime_driver": [0.01, 0.01, 0.01, 0.01, 0.01, 0.02, 0.03],
+        })
+        cutpoints = fit_regime_cutpoints(calibration)
+        test = pd.DataFrame({"regime_driver": [0.01, 0.02, 0.03], "y": [1, 2, 3]})
+        labelled = apply_regimes(test, cutpoints)
+        self.assertEqual(labelled.regime.tolist(), ["low", "medium", "high"])
+        changed = apply_regimes(test.assign(y=[300, 200, 100]), cutpoints)
+        self.assertEqual(changed.regime.tolist(), labelled.regime.tolist())
+
+    def test_metric_tables_include_fixed_regime_and_subgroup_diagnostics(self):
+        test = metric_fixture_with_price_level_trend()
+        test["regime_driver"] = np.tile(
+            np.linspace(0.01, 0.03, 30), test.model.nunique(),
+        )
+        calibration = test.loc[test.model.eq("good_returns")].copy()
+        tables = tft_metric_tables(calibration, test)
+        self.assertEqual(
+            set(tables), {"overall", "by_horizon", "by_asset", "by_regime"},
+        )
+        self.assertIn("return_r2", tables["by_asset"])
+        self.assertIn("coverage", tables["by_horizon"])
+        self.assertEqual(
+            set(tables["by_regime"].index.get_level_values("regime")),
+            {"low", "medium", "high"},
+        )
