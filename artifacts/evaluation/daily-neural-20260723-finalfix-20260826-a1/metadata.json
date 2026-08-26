@@ -1,0 +1,21 @@
+{
+  "pipeline": "daily",
+  "family": "neural",
+  "data_end": "2026-07-23 00:00:00+00:00",
+  "horizons": 7,
+  "folds": 6,
+  "origins": 1445,
+  "models": [
+    "dlinear",
+    "lstm"
+  ],
+  "lookback": 30,
+  "channels": [
+    "r",
+    "ar",
+    "rng",
+    "dv"
+  ],
+  "run_id": "finalfix-20260826-a1",
+  "output_dir": "C:/Users/gaura/VSCode/PredictionModel/Prediction-Model/.worktrees/daily-prediction-quality/artifacts/evaluation/daily-neural-20260723-finalfix-20260826-a1"
+}

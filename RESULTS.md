@@ -34,20 +34,21 @@ untouched post-selection validation or a current/live forecast. A locked compari
 requires future chronological data strictly after the cutoff; rerunning these folds
 does not create an untouched test. Exact provenance, subgroup tables, and charts are
 in the [daily methodology](docs/evaluation-methodology.md) and
-[generated evidence](docs/evaluation/daily-20260723/).
+[generated evidence](docs/evaluation/daily-20260723-finalfix-legacy-20260826-a2/).
 
 Predict daily volatility, turn it into a calibrated price interval. Lower pinball
 better; coverage target is 80%.
 
 | model | family | pinball | coverage % |
 |---|---|---|---|
-| LSTM | neural | **162.98** | 79.9 |
-| DLinear | neural | 163.28 | 79.8 |
-| XGBoost | tree | 166.74 | 78.8 |
-| LightGBM | tree | 167.69 | 78.8 |
-| vol_21d (baseline) | — | 167.99 | 79.3 |
+| LSTM | neural | **162.49** | 80.0 |
+| DLinear | neural | 162.70 | 79.7 |
+| tree_blend | tree ensemble | 167.35 | 78.9 |
+| XGBoost | tree | 167.43 | 78.8 |
+| vol_21d (baseline) | — | 167.69 | 79.4 |
+| LightGBM | tree | 167.83 | 78.9 |
 
-On this sample, LSTM's aggregate pinball loss is about 2.3% lower than XGBoost's.
+On this sample, LSTM's aggregate pinball loss is about 3.0% lower than XGBoost's.
 This modest observed difference has no uncertainty interval here, does not identify
 a cause, and is not validated evidence of post-selection generalization.
 

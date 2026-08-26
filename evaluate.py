@@ -5,7 +5,9 @@ from pathlib import Path
 
 import pandas as pd
 
-from crypto.evaluation import metric_tables, validate_predictions
+from crypto.evaluation import (
+    metric_tables, validate_comparable_predictions, validate_predictions,
+)
 from crypto.evaluation_plots import render_bundle, require_volatility_baseline
 
 
@@ -112,12 +114,15 @@ def main(argv=None):
         _root_relative(path, provenance_root)
 
     frames = [pd.read_parquet(path) for path in args.predictions]
-    frame = pd.concat(frames, ignore_index=True)
-    validate_predictions(frame)
-    require_volatility_baseline(frame)
     inputs = [
         _input_record(path, provenance_root) for path in args.predictions
     ]
+    validate_comparable_predictions(
+        frames, [item["metadata"] for item in inputs]
+    )
+    frame = pd.concat(frames, ignore_index=True)
+    validate_predictions(frame)
+    require_volatility_baseline(frame)
     cutoffs = {pd.Timestamp(item["metadata"]["data_end"]).isoformat()
                for item in inputs}
     if len(cutoffs) != 1:

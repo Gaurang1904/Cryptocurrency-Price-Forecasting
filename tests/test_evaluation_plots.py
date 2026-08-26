@@ -18,13 +18,15 @@ def evaluation_frame():
     rows = []
     for model, sigma in (("vol_21d", 0.02), ("xgb", 0.018)):
         for i, origin in enumerate(origins):
-            rows.append(base.assign(
-                model=model, asset="BTC" if i < 2 else "ETH", origin=origin,
-                fold=pd.Timestamp("2025-01-01", tz="UTC"), h=i % 2 + 1,
-                y=101.0 + i, last=100.0, sigma=sigma, rv=0.017 + i * 0.001,
-                regime_driver=0.01 + i * 0.01, q10=95.0 + i,
-                q50=100.0 + i, q90=105.0 + i,
-            ))
+            for h in (1, 2):
+                rows.append(base.assign(
+                    model=model, asset="BTC" if i < 2 else "ETH", origin=origin,
+                    fold=pd.Timestamp("2025-01-01", tz="UTC"), h=h,
+                    y=101.0 + i + h, last=100.0, sigma=sigma,
+                    rv=0.017 + i * 0.001 + h * 0.0001,
+                    regime_driver=0.01 + i * 0.01, q10=95.0 + i,
+                    q50=100.0 + i, q90=105.0 + i,
+                ))
     return pd.concat(rows, ignore_index=True)
 
 
@@ -108,7 +110,7 @@ class EvaluationPlotTests(unittest.TestCase):
                 "folds": ["2025-01-01T00:00:00+00:00"],
                 "fold_count": 1,
                 "distinct_origins": 3,
-                "row_count": 9,
+                "row_count": 18,
                 "models": ["lstm", "vol_21d", "xgb"],
                 "horizons": [1, 2],
             })
@@ -195,5 +197,34 @@ class EvaluationPlotTests(unittest.TestCase):
                 main([
                     str(predictions), "--out", str(out),
                     "--provenance-root", str(root),
+                ])
+            self.assertFalse(out.exists())
+
+    def test_cli_rejects_incomparable_bundle_before_creating_output(self):
+        with tempfile.TemporaryDirectory(dir=Path.cwd()) as tmp:
+            root = Path(tmp)
+            tree_dir, neural_dir = root / "tree", root / "neural"
+            tree_dir.mkdir()
+            neural_dir.mkdir()
+            tree_predictions = tree_dir / "predictions.parquet"
+            neural_predictions = neural_dir / "predictions.parquet"
+            tree_frame = evaluation_frame()
+            neural_frame = tree_frame[tree_frame.model == "xgb"].assign(model="lstm").iloc[:-2]
+            tree_frame.to_parquet(tree_predictions, index=False)
+            neural_frame.to_parquet(neural_predictions, index=False)
+            metadata = {
+                "pipeline": "daily", "data_end": "2025-01-10 00:00:00+00:00",
+                "horizons": 2, "folds": 1, "origins": 3,
+            }
+            (tree_dir / "metadata.json").write_text(json.dumps(metadata | {"family": "tree"}))
+            (neural_dir / "metadata.json").write_text(json.dumps(metadata | {
+                "family": "neural", "origins": 2,
+            }))
+            out = root / "report"
+
+            with self.assertRaisesRegex(ValueError, "identical forecast key sets"):
+                main([
+                    str(tree_predictions), str(neural_predictions),
+                    "--out", str(out), "--provenance-root", str(root),
                 ])
             self.assertFalse(out.exists())

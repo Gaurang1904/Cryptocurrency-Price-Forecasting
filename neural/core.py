@@ -60,6 +60,12 @@ def _scale(x, mu, sd):
     return (x - mu) / sd
 
 
+def construct_model(build_fn, channels=None):
+    """Seed immediately before construction so cold starts are reproducible."""
+    torch.manual_seed(SEED)
+    return build_fn(len(CHANNELS) if channels is None else channels)
+
+
 def train_net(model, Xtr, Ytr, Xva, Yva):
     """Adam + early stopping on validation MSE. Restores best weights."""
     torch.manual_seed(SEED)
@@ -117,7 +123,7 @@ def backtest(builders, run_id=None,
         last = test.close.to_numpy()
 
         for name, make in builders.items():
-            net = train_net(make(len(CHANNELS)), Xfit_s, Yfit,
+            net = train_net(construct_model(make), Xfit_s, Yfit,
                             Xcal_s, np.log(cal[ytargets].to_numpy()))
             sig_cal = clip_sigma(np.exp(_predict(net, Xcal_s)))  # (n, H)
             sig_te = clip_sigma(np.exp(_predict(net, Xte_s)))
@@ -163,7 +169,7 @@ def train_and_save(build_fn, name):
     Xfit, ofit = _lookup(win, index, fit)
     Xcal, ocal = _lookup(win, index, cal)
     mu, sd = Xfit.mean((0, 1)), Xfit.std((0, 1)) + 1e-8
-    net = train_net(build_fn(len(CHANNELS)), _scale(Xfit, mu, sd),
+    net = train_net(construct_model(build_fn), _scale(Xfit, mu, sd),
                     np.log(fit[ytargets].to_numpy()[ofit]),
                     _scale(Xcal, mu, sd), np.log(cal[ytargets].to_numpy()[ocal]))
 

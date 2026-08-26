@@ -26,6 +26,21 @@ def valid_frame():
     })
 
 
+def comparable_frame(model="xgb", horizons=(1, 2)):
+    rows = []
+    for i, origin in enumerate(pd.date_range("2025-01-01", periods=2, tz="UTC")):
+        for h in horizons:
+            rows.append(valid_frame().assign(
+                model=model, asset="BTC" if i == 0 else "ETH", origin=origin,
+                fold=pd.Timestamp("2025-01-01", tz="UTC"), h=h,
+                y=100.0 + i + h, last=100.0 + i,
+                sigma=0.02, rv=0.01 + h / 1000,
+                regime_driver=0.02 + i / 100,
+                q10=95.0 + i, q50=100.0 + i, q90=105.0 + i,
+            ))
+    return pd.concat(rows, ignore_index=True)
+
+
 class PredictionValidationTests(unittest.TestCase):
     def test_run_directory_contains_pipeline_and_data_cutoff(self):
         got = default_run_dir(
@@ -294,3 +309,80 @@ class PredictionValidationTests(unittest.TestCase):
                 save_predictions(
                     valid_frame(), reserved, {"pipeline": "daily"}, reserved=True
                 )
+
+    def test_run_ids_are_single_safe_path_components(self):
+        from crypto.evaluation import reserve_run_dir
+
+        invalid = ["", ".", "..", ".hidden", "../escape", "a/b", "a\\b", "trail."]
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for run_id in invalid:
+                with self.subTest(run_id=run_id):
+                    with self.assertRaisesRegex(ValueError, "run_id"):
+                        reserve_run_dir(
+                            "tree", pd.Timestamp("2026-07-23", tz="UTC"),
+                            run_id=run_id, root=root,
+                        )
+
+    def test_comparable_bundles_require_identical_model_keys(self):
+        from crypto.evaluation import validate_comparable_predictions
+
+        left = comparable_frame("xgb")
+        right = comparable_frame("lstm").iloc[:-2]
+        metadata = [
+            {"horizons": 2, "folds": 1, "origins": 2},
+            {"horizons": 2, "folds": 1, "origins": 1},
+        ]
+        with self.assertRaisesRegex(ValueError, "identical forecast key sets"):
+            validate_comparable_predictions([left, right], metadata)
+
+    def test_comparable_bundles_require_shared_truth_and_context(self):
+        from crypto.evaluation import validate_comparable_predictions
+
+        left = comparable_frame("xgb")
+        right = comparable_frame("lstm")
+        right.loc[0, "y"] += 1
+        metadata = [
+            {"horizons": 2, "folds": 1, "origins": 2},
+            {"horizons": 2, "folds": 1, "origins": 2},
+        ]
+        with self.assertRaisesRegex(ValueError, "shared y"):
+            validate_comparable_predictions([left, right], metadata)
+
+    def test_comparable_bundles_require_complete_horizons(self):
+        from crypto.evaluation import validate_comparable_predictions
+
+        frames = [comparable_frame("xgb", horizons=(1,)), comparable_frame("lstm", horizons=(1,))]
+        metadata = [
+            {"horizons": 2, "folds": 1, "origins": 2},
+            {"horizons": 2, "folds": 1, "origins": 2},
+        ]
+        with self.assertRaisesRegex(ValueError, "complete horizons"):
+            validate_comparable_predictions(frames, metadata)
+
+    def test_comparable_bundles_require_metadata_counts_to_match_rows(self):
+        from crypto.evaluation import validate_comparable_predictions
+
+        frames = [comparable_frame("xgb"), comparable_frame("lstm")]
+        metadata = [
+            {"horizons": 2, "folds": 1, "origins": 3},
+            {"horizons": 2, "folds": 1, "origins": 2},
+        ]
+        with self.assertRaisesRegex(ValueError, "metadata origins"):
+            validate_comparable_predictions(frames, metadata)
+
+    def test_neural_model_construction_is_cold_start_reproducible(self):
+        import torch
+        from neural import core
+
+        build = lambda channels: torch.nn.Sequential(
+            torch.nn.Flatten(), torch.nn.Linear(channels * 2, core.H)
+        )
+        first = core.construct_model(build, channels=2)
+        torch.manual_seed(999)
+        second = core.construct_model(build, channels=2)
+
+        for key, value in first.state_dict().items():
+            self.assertTrue(torch.equal(value, second.state_dict()[key]))
+        sample = np.arange(8, dtype=np.float32).reshape(2, 2, 2)
+        np.testing.assert_array_equal(core._predict(first, sample), core._predict(second, sample))

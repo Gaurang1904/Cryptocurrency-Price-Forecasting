@@ -12,10 +12,14 @@ from crypto.data import FUNDING_OUT
 
 H = 7  # forecast horizon in days
 PREFIXES = ("ret_", "vol_", "range", "px_", "btc_", "fund", "drawdown_", "volume_")
+CANDIDATE_FEATURES = {"vol_regime", "drawdown_63d", "volume_z21"}
 
 
-def feature_cols(feat):
-    return [c for c in feat.columns if c.startswith(PREFIXES)]
+def feature_cols(feat, include_candidates=False):
+    columns = [c for c in feat.columns if c.startswith(PREFIXES)]
+    if include_candidates:
+        return columns
+    return [c for c in columns if c not in CANDIDATE_FEATURES]
 
 
 def feature_groups(columns):
@@ -63,6 +67,9 @@ def make_features(df):
             g[name] = np.log(np.sqrt(sq.rolling(w).mean()).clip(lower=1e-6))
 
         for h in range(1, H + 1):
+            # Endpoint metadata is label-only. Shifting each asset's actual date
+            # sequence handles missing calendar days without a row/global shortcut.
+            g[f"label_end{h}"] = g.date.shift(-h)
             g[f"y{h}"] = np.log(g.close.shift(-h) / g.close)
 
         g = g.join(btc, on="date")
@@ -99,26 +106,37 @@ def add_vol_targets(feat):
     return pd.concat(out, ignore_index=True)
 
 
-def build(df, funding=True):
+def build(df, funding=True, include_candidates=False):
     feat = make_features(df)
     if funding:
         feat = add_funding(feat)
     feat = add_vol_targets(feat)
-    return feat, feature_cols(feat)
+    return feat, feature_cols(feat, include_candidates=include_candidates)
 
 
 def check_causal(df, cols=None):
-    """Corrupting the tail must not move any earlier feature value.
+    """Corrupt every asset from a date cutoff and compare every earlier row."""
+    dates = pd.Index(df["date"].drop_duplicates()).sort_values()
+    if len(dates) < 3:
+        raise ValueError("causality check needs at least three distinct dates")
+    tail = min(200, max(1, len(dates) // 3))
+    cutoff = dates[-tail]
 
-    This is the test that would have caught a target column sitting in the
-    feature list. Cheap enough to run before every training job.
-    """
     a = make_features(df)
-    cols = cols or [c for c in feature_cols(a)]
+    cols = feature_cols(a) if cols is None else list(cols)
+    missing = sorted(set(cols) - set(a.columns))
+    if missing:
+        raise ValueError(f"requested causality columns are missing: {missing}")
+
     bad = df.copy()
-    bad.loc[bad.index[-200:], "close"] *= 3
+    bad.loc[bad.date >= cutoff, "close"] *= 3
     b = make_features(bad)
-    cut = pd.Timestamp(a.date.max()) - pd.DateOffset(days=400)
-    a, b = a[a.date < cut], b[b.date < cut]
-    shared = [c for c in cols if c in a.columns]
-    assert np.allclose(a[shared].fillna(0), b[shared].fillna(0)), "look-ahead in features"
+    missing = sorted(set(cols) - set(b.columns))
+    if missing:
+        raise ValueError(f"requested causality columns are missing after corruption: {missing}")
+
+    keys = ["asset", "date"]
+    left = a.loc[a.date < cutoff, keys + cols].sort_values(keys).reset_index(drop=True)
+    right = b.loc[b.date < cutoff, keys + cols].sort_values(keys).reset_index(drop=True)
+    if not left.equals(right):
+        raise AssertionError("look-ahead in features")

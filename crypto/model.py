@@ -9,16 +9,18 @@ on one scale. The family-specific fitters live in tree/, linear/, neural/.
 import numpy as np
 from scipy.stats import norm
 
+from crypto.backtest import purge_forward_labels
+
 QUANTILES = [0.1, 0.5, 0.9]
 CAL_FRAC = 0.2  # tail of the training window reserved for calibration
 SIGMA_MIN, SIGMA_MAX = 1e-4, 0.30  # daily vol bounds; 30%/day is already extreme
 
 
 def split_calibration(train, frac=CAL_FRAC):
-    """Split a training window into (fit, calibration). The z-table must be fit
-    on data the model did not train on - skipping this dropped coverage to 64%."""
+    """Split fit/calibration and purge labels that reach past the cut."""
     cut = train.date.quantile(1 - frac)
-    return train[train.date < cut], train[train.date >= cut]
+    fit = purge_forward_labels(train[train.date < cut], cut)
+    return fit, train[train.date >= cut]
 
 
 def clip_sigma(s):

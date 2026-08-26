@@ -60,7 +60,9 @@ def run_ablation(feat, cols):
 
 
 if __name__ == "__main__":
-    feat, cols = build(pd.read_parquet(OHLCV_OUT))
+    feat, cols = build(
+        pd.read_parquet(OHLCV_OUT), include_candidates=True
+    )
     table = run_ablation(feat, cols)
     OUT.parent.mkdir(parents=True, exist_ok=True)
     table.to_csv(OUT, index=False)

@@ -25,7 +25,7 @@ Three questions, each compared with a simple baseline in the historical evidence
 |---|---|---|
 | Predict direction? | **No robust signal.** Results varied by model and test window. | `RESULTS.md` |
 | Predict the price level? | **No.** LightGBM, XGBoost, ARIMA, SARIMA, Linear Regression all lost to `flat`. | `experiments/baselines.py`, `experiments/classical_price.py` |
-| Predict volatility? | **On this historical sample, modestly in aggregate.** Individual-horizon comparisons with the 21-day rolling average are mixed. | `docs/evaluation/daily-20260723/metrics_by_horizon.csv` |
+| Predict volatility? | **On this historical sample, modestly in aggregate.** Individual-horizon comparisons with the 21-day rolling average are mixed. | `docs/evaluation/daily-20260723-finalfix-legacy-20260826-a2/metrics_by_horizon.csv` |
 
 So the models predict volatility, and an empirically calibrated quantile table
 turns that into a price interval. Coverage lands near the 80% target.
@@ -37,16 +37,17 @@ turns that into a price interval. Coverage lands near the 80% target.
 These are historical OOS results with data through **2026-07-23** and forecast
 origins through 2026-07-14; they are not a current/live forecast. See the
 [methodology](docs/evaluation-methodology.md) and
-[generated evidence](docs/evaluation/daily-20260723/).
+[generated evidence](docs/evaluation/daily-20260723-finalfix-legacy-20260826-a2/).
 
 | model | family | pinball | coverage (target 80) |
 |---|---|---|---|
-| lstm | neural | 162.98 | 79.9 |
-| dlinear | neural | 163.28 | 79.8 |
-| xgb | tree | 166.74 | 78.8 |
-| lgbm | tree | 167.69 | 78.8 |
+| lstm | neural | 162.49 | 80.0 |
+| dlinear | neural | 162.70 | 79.7 |
+| tree_blend | tree ensemble | 167.35 | 78.9 |
+| xgb | tree | 167.43 | 78.8 |
+| lgbm | tree | 167.83 | 78.9 |
 
-On this selection/evaluation sample, LSTM's aggregate pinball loss is about 2.3%
+On this exploratory selection/evaluation sample, LSTM's aggregate pinball loss is about 3.0%
 lower than XGBoost's. The comparison is small and does not identify a cause or
 validate post-selection generalization; that requires future untouched data after
 the 2026-07-23 cutoff.
@@ -131,8 +132,8 @@ what the data actually does:
 ## Rules this repo enforces
 
 1. **Baseline first.** Candidate measurements are always reported beside flat / drift / seasonal baselines.
-2. **Features are causal.** The daily pipeline's `check_causal()` corrupts the last
-   200 bars, rebuilds features, and asserts that nothing earlier moved.
+2. **Features are causal.** The daily pipeline's `check_causal()` corrupts every
+   asset from a date cutoff, rebuilds features, and asserts that nothing earlier moved.
 3. **Targets are never features.** The original code fed `target_return_1h` (next-day
    data) into the model, invalidating every metric it produced.
 4. **Calibration is a model too.** It gets its own holdout. Fitting the quantile table

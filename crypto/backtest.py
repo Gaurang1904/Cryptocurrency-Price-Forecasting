@@ -56,12 +56,24 @@ def origin_mask(feat):
     return (idx >= MIN_HIST) & (idx < n - H) & ((idx - MIN_HIST) % STRIDE == 0)
 
 
+def purge_forward_labels(rows, next_start, horizons=range(1, H + 1)):
+    """Keep rows whose per-asset target endpoints do not cross a partition."""
+    endpoints = [f"label_end{h}" for h in horizons]
+    missing = sorted(set(endpoints) - set(rows.columns))
+    if missing:
+        raise ValueError(f"missing label endpoint columns: {missing}")
+    boundary = pd.Timestamp(next_start)
+    eligible = rows[endpoints].notna().all(axis=1)
+    eligible &= rows[endpoints].le(boundary).all(axis=1)
+    return rows.loc[eligible]
+
+
 def run_folds(feat, cols):
     """Yield (train, test, start) per expanding-window fold. Train is strictly earlier."""
     origins = feat[origin_mask(feat)]
     targets = [f"y{h}" for h in range(1, H + 1)]
     for start in pd.date_range(TEST_START, feat.date.max(), freq=FOLD, tz="UTC"):
-        train = feat[feat.date < start].dropna(subset=cols + targets)
+        train = purge_forward_labels(feat[feat.date < start], start).dropna(subset=cols + targets)
         test = origins[(origins.date >= start) & (origins.date < start + FOLD)].dropna(subset=cols)
         if not test.empty:
             yield train, test, start
@@ -108,8 +120,13 @@ def score(res, quantiles=(0.1, 0.5, 0.9)):
             "med_MAPE": ((g.y - mid).abs() / g.y).mean() * 100,
             # Pinball is in price units, so it cannot be compared across coins.
             # Scaling by price makes BTC and XRP readable in one table.
-            "pinball_%": np.mean([pinball(g.y, g[f"q{int(q * 100)}"], q)
-                                  for q in quantiles]) / g["last"].mean() * 100,
+            "pinball_%": np.mean([
+                np.maximum(
+                    q * (g.y.to_numpy() - g[f"q{int(q * 100)}"].to_numpy()),
+                    (q - 1) * (g.y.to_numpy() - g[f"q{int(q * 100)}"].to_numpy()),
+                ) / g["last"].to_numpy()
+                for q in quantiles
+            ]) * 100,
         })
     return pd.DataFrame(rows).set_index("model").sort_values("pinball")
 

@@ -475,3 +475,227 @@ PASS: 17 local references
 git diff --check
 exit 0 (Windows line-ending warnings only)
 ```
+
+## Final-review recovery and corrected evidence (2026-08-26)
+
+### Scope and ruling
+
+This recovery completed the consolidated whole-branch review fixes on top of
+`5454877`. The corrected evidence remains historical through 2026-07-23 with
+OOS origins through 2026-07-14. It is exploratory selection/evaluation evidence,
+not a current forecast, untouched post-selection validation, or deployability
+claim.
+
+The final strict feature gate was re-applied after correcting row-normalized
+pinball loss. `all` improved aggregate loss but worsened worst-fold loss relative
+to `legacy`, so the predeclared requirement to improve both metrics rejected the
+three-feature candidate. Default model columns now exclude `vol_regime`,
+`drawdown_63d`, and `volume_z21`; the ablation path opts into them explicitly.
+The cost of this ruling was one additional full tree run. The corrected neural
+artifact remained valid because its raw channels, purged partitions, and seeded
+training path were unchanged.
+
+### Reconstructed RED evidence
+
+No RED transcript survived the prior worker's usage failure. Exact regression
+evidence was reconstructed in a disposable `git archive` of commit `5454877`
+with only the new tests overlaid. The dirty recovery worktree was never modified
+during reconstruction, and the exact temporary directory was verified and removed
+after capture.
+
+Forward-label endpoints and purging:
+
+```text
+python -m unittest tests.test_backtest -v
+ImportError: cannot import name 'purge_forward_labels' from 'crypto.backtest'
+Ran 1 test in 0.000s
+FAILED (errors=1)
+```
+
+Per-asset endpoints and causal negative control:
+
+```text
+python -m unittest tests.test_features -v
+test_causality_guard_checks_requested_labels_and_all_assets ... FAIL
+AssertionError: AssertionError not raised
+test_label_endpoints_follow_each_assets_actual_date_sequence ... ERROR
+KeyError: 'label_end1'
+Ran 5 tests in 0.356s
+FAILED (failures=1, errors=1)
+```
+
+Safe run IDs, bundle comparability, and cold-start construction:
+
+```text
+python -m unittest   tests.test_evaluation.PredictionValidationTests.test_run_ids_are_single_safe_path_components   tests.test_evaluation.PredictionValidationTests.test_comparable_bundles_require_identical_model_keys   tests.test_evaluation.PredictionValidationTests.test_comparable_bundles_require_shared_truth_and_context   tests.test_evaluation.PredictionValidationTests.test_comparable_bundles_require_complete_horizons   tests.test_evaluation.PredictionValidationTests.test_comparable_bundles_require_metadata_counts_to_match_rows   tests.test_evaluation.PredictionValidationTests.test_neural_model_construction_is_cold_start_reproducible -v
+Ran 6 tests in 5.183s
+FAILED (failures=5, errors=8)
+```
+
+The exact failures included unsafe labels not raising `ValueError`, missing
+`validate_comparable_predictions`, and:
+
+```text
+AttributeError: module 'neural.core' has no attribute 'construct_model'
+```
+
+Evaluator rejection before output creation:
+
+```text
+python -m unittest tests.test_evaluation_plots.EvaluationPlotTests.test_cli_rejects_incomparable_bundle_before_creating_output -v
+AssertionError: ValueError not raised
+Ran 1 test in 1.533s
+FAILED (failures=1)
+```
+
+Row-wise normalized pinball:
+
+```text
+{'got': 0.9090909090909091, 'expected': 2.75}
+AssertionError: (0.9090909090909091, 2.75)
+exit 1
+```
+
+Strict feature selection received an additional RED cycle after the corrected
+ablation changed the acceptance decision:
+
+```text
+python -m unittest   tests.test_features.RegimeFeatureTests.test_candidate_features_are_opt_in_model_columns   tests.test_feature_ablation.FeatureAblationTests.test_ablation_explicitly_includes_candidate_features -v
+AssertionError: False is not true
+TypeError: feature_cols() got an unexpected keyword argument 'include_candidates'
+Ran 2 tests in 0.262s
+FAILED (failures=1, errors=1)
+```
+
+### GREEN implementation and focused proof
+
+The consolidated implementation now:
+
+- persists actual per-asset `label_end1` through `label_end7` metadata and
+  purges all seven endpoints at outer train/test and inner fit/calibration
+  boundaries, allowing endpoint equality;
+- corrupts every asset from a date cutoff in `check_causal`, with `y1` as an
+  executable negative control;
+- divides every row's quantile loss by that row's `last` price before averaging;
+- requires identical per-model `asset/origin/h` grids, complete horizons, shared
+  `fold/y/last/rv/regime_driver`, and matching metadata counts before evaluator
+  output creation;
+- restricts `run_id` to one safe non-dot component and verifies its resolved
+  run directory remains inside the output root;
+- seeds torch immediately before model construction in both backtest and
+  train/save;
+- defaults model columns to the accepted 24-feature `legacy` set while preserving
+  explicit exploratory ablation of all 27 columns.
+
+Focused feature-selection GREEN:
+
+```text
+python -m unittest tests.test_features tests.test_feature_ablation -v
+Ran 9 tests in 0.292s
+OK
+```
+
+Fresh full GREEN:
+
+```text
+python -m unittest discover -s tests -q
+Ran 49 tests in 19.958s
+OK
+
+python -m compileall -q crypto tree linear neural experiments fetch.py predict.py evaluate.py
+exit 0
+
+python -c "... check_causal(pd.read_parquet(OHLCV_OUT)) ..."
+PASS: full-data causality guard
+```
+
+### Corrected feature ablation
+
+The recovered `artifacts/feature_ablation.csv` was complete and was not rerun:
+42 rows, seven candidates by six folds, no duplicate candidate/fold keys, no
+nulls, one 2026-07-23 cutoff, and 1,445 origins per candidate.
+
+Origin-count-weighted results:
+
+| candidate | overall pinball % | worst-fold pinball % | combined coverage % |
+|---|---:|---:|---:|
+| without_funding | 1.961736 | 3.081995 | 79.742956 |
+| without_volume | 1.970251 | 3.137985 | 78.882847 |
+| all | 1.970648 | 3.138351 | 78.952051 |
+| legacy | 1.972341 | 3.136098 | 78.843302 |
+| without_market | 1.972514 | 3.153773 | 78.833416 |
+| without_volatility | 1.977617 | 3.172954 | 78.793870 |
+| without_returns | 1.991386 | 3.211170 | 78.843302 |
+
+`all` therefore failed the strict all-versus-legacy worst-fold gate despite its
+slightly lower aggregate loss. `without_funding` remains a searched same-fold
+diagnostic and was not substituted post hoc.
+
+### Corrected heavy runs
+
+An initial post-purge `all` tree run completed under `finalfix-20260826-a1`,
+then was superseded after the strict gate ruling. Its untracked tree/report
+directories were removed; the ablation CSV retains the rejection evidence.
+
+The corrected neural run completed under
+`daily-neural-20260723-finalfix-20260826-a1`:
+
+| model | pinball | pinball % | coverage % |
+|---|---:|---:|---:|
+| LSTM | 162.485611 | 1.943578 | 80.019773 |
+| DLinear | 162.702303 | 1.958337 | 79.673752 |
+
+The final 24-feature legacy tree run completed under
+`daily-tree-20260723-finalfix-legacy-20260826-a2`:
+
+| model | pinball | pinball % | coverage % |
+|---|---:|---:|---:|
+| tree_blend | 167.350361 | 1.970745 | 78.863075 |
+| XGBoost | 167.430037 | 1.972341 | 78.843302 |
+| vol_21d | 167.691545 | 2.023955 | 79.426594 |
+| LightGBM | 167.827566 | 1.975007 | 78.902620 |
+
+Final ensemble gate:
+
+| model | overall pinball % | worst-fold pinball % | combined coverage % |
+|---|---:|---:|---:|
+| tree_blend | 1.970745 | 3.127798 | 78.863075 |
+| XGBoost | 1.972341 | 3.136098 | 78.843302 |
+| vol_21d | 2.023955 | 3.301926 | 79.426594 |
+
+The blend passed this descriptive gate narrowly and is published with explicit
+selection-set posture. It is not untouched validation.
+
+### Final bundle and visual QA
+
+The evaluator combined only the final legacy tree bundle and corrected neural
+bundle into
+`docs/evaluation/daily-20260723-finalfix-legacy-20260826-a2`.
+
+Exact validation output:
+
+```text
+csv=5 png=6 inputs=2 outputs=11 rows=60690 origins=1445 folds=6
+hashes=matched absolute_paths=0
+models=dlinear,lgbm,lstm,tree_blend,vol_21d,xgb
+horizons=1..7 oos=2021-01-01..2026-07-14 cutoff=2026-07-23
+tree_features=24 candidate_features_present=[]
+```
+
+Every output, input prediction Parquet, and input metadata hash matched the
+manifest. All paths are provenance-root-relative and portable. The six final PNGs
+were visually inspected through an ACL-safe contact sheet; titles, axes, legends,
+the 80% reference line, date range, and 1,445-origin annotation are legible.
+
+### Remaining concerns
+
+- Feature and ensemble decisions consulted the same OOS folds. Future
+  chronological data strictly after 2026-07-23 is required for untouched
+  validation.
+- The feature gate is mixed: `all` improved aggregate loss but slightly worsened
+  the worst fold, so the strict rule rejected it.
+- The ensemble margin over XGBoost is small and carries no uncertainty interval.
+- Aggregate coverage is inside 78-82%, while subgroup variation remains visible
+  in the five CSV tables.
+- This is forecast-distribution evaluation, not portfolio returns or evidence of
+  tradability.
