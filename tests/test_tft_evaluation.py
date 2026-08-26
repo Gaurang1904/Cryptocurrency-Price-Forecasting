@@ -95,3 +95,20 @@ class TftForecastFrameTests(unittest.TestCase):
         frame, _ = forecast_fixture()
         with self.assertRaisesRegex(ValueError, "missing values"):
             validate_tft_forecasts(frame.assign(split=np.nan), expected_horizons=(1, 2, 3))
+
+    def test_conversion_preserves_horizons_for_non_default_cv_indices(self):
+        cv, context = cv_fixture()
+        cv.index = np.arange(10, 10 + len(cv))
+        frame = to_tft_forecasts(cv, context, model="tft_raw")
+        self.assertEqual(sorted(frame.h.unique()), [1, 2, 3])
+        self.assertFalse(frame.h.isna().any())
+
+    def test_validation_rejects_non_positive_price_space_fields(self):
+        reference, _ = forecast_fixture()
+        for column in ("y", "last", "q10", "q50", "q90"):
+            for value in (-1.0, 0.0):
+                with self.subTest(column=column, value=value):
+                    frame = reference.copy()
+                    frame.loc[frame.index[0], column] = value
+                    with self.assertRaisesRegex(ValueError, "strictly positive"):
+                        validate_tft_forecasts(frame, expected_horizons=(1, 2, 3))

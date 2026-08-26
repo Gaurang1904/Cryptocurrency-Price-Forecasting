@@ -39,9 +39,6 @@ def to_tft_forecasts(cv, context, model):
     forecasts = cv.copy()
     forecasts["cutoff"] = _utc(forecasts["cutoff"])
     forecasts["ds"] = _utc(forecasts["ds"])
-    elapsed = forecasts["ds"] - forecasts["cutoff"]
-    if (elapsed <= pd.Timedelta(0)).any() or (elapsed % _FREQUENCY != pd.Timedelta(0)).any():
-        raise ValueError("forecast timestamps must be positive 15-minute horizons")
 
     cutoff_context = context[[
         "asset", "ds", "close", "rv_672", "sigma_672", "momentum_96",
@@ -55,6 +52,9 @@ def to_tft_forecasts(cv, context, model):
         cutoff_context, left_on=["unique_id", "cutoff"],
         right_on=["asset", "cutoff"], how="left", validate="many_to_one",
     )
+    elapsed = forecasts["ds"] - forecasts["cutoff"]
+    if (elapsed <= pd.Timedelta(0)).any() or (elapsed % _FREQUENCY != pd.Timedelta(0)).any():
+        raise ValueError("forecast timestamps must be positive 15-minute horizons")
     frame = pd.DataFrame({
         "model": model,
         "asset": forecasts["asset"],
@@ -100,6 +100,8 @@ def validate_tft_forecasts(frame, expected_horizons):
     expected = set(expected_horizons)
     if not expected or set(frame.h) - expected:
         raise ValueError("unexpected forecast horizons")
+    if (frame[["y", "last", "q10", "q50", "q90"]] <= 0).any().any():
+        raise ValueError("price-space values must be strictly positive")
     grouped_horizons = frame.groupby(["model", "asset", "origin"], sort=False).h.agg(set)
     if not grouped_horizons.map(lambda horizons: horizons == expected).all():
         raise ValueError("complete horizons required for every forecast origin")
