@@ -60,3 +60,29 @@ class TftDataContractTests(unittest.TestCase):
                 tiny_raw().query("asset == 'BTC'"), assets=("BTC", "ETH"),
                 as_of=pd.Timestamp("2026-01-01 01:00Z"),
             )
+
+    def test_validation_rejects_non_utc_or_misaligned_timestamps(self):
+        raw = tiny_raw(); raw["date"] = raw.date.dt.tz_convert("Asia/Kolkata")
+        with self.assertRaisesRegex(ValueError, "UTC"):
+            validate_ohlcv_15m(raw, assets=("BTC", "ETH"), as_of=pd.Timestamp("2026-01-01 01:00Z"))
+        raw = tiny_raw(); raw.loc[0, "date"] = pd.Timestamp("2026-01-01 00:07Z")
+        with self.assertRaisesRegex(ValueError, "aligned"):
+            validate_ohlcv_15m(raw, assets=("BTC", "ETH"), as_of=pd.Timestamp("2026-01-01 01:00Z"))
+
+    def test_validation_rejects_insufficient_history(self):
+        raw = tiny_raw().groupby("asset", as_index=False).head(1)
+        with self.assertRaisesRegex(ValueError, "history"):
+            validate_ohlcv_15m(raw, assets=("BTC", "ETH"), as_of=pd.Timestamp("2026-01-01 01:00Z"))
+
+    def test_validation_rejects_unsupported_assets(self):
+        raw = tiny_raw(); extra = raw.iloc[:3].copy(); extra["asset"] = "DOGE"
+        with self.assertRaisesRegex(ValueError, "unsupported"):
+            validate_ohlcv_15m(pd.concat([raw, extra]), assets=("BTC", "ETH"), as_of=pd.Timestamp("2026-01-01 01:00Z"))
+        with self.assertRaisesRegex(ValueError, "unsupported"):
+            validate_ohlcv_15m(raw, assets=("BTC", "DOGE"), as_of=pd.Timestamp("2026-01-01 01:00Z"))
+
+    def test_validation_rejects_missing_or_nonfinite_ohlcv(self):
+        for value in (None, float("nan"), float("inf"), float("-inf")):
+            raw = tiny_raw(); raw.loc[0, "close"] = value
+            with self.assertRaisesRegex(ValueError, "finite"):
+                validate_ohlcv_15m(raw, assets=("BTC", "ETH"), as_of=pd.Timestamp("2026-01-01 01:00Z"))
