@@ -86,3 +86,10 @@ class TftDataContractTests(unittest.TestCase):
             raw = tiny_raw(); raw.loc[0, "close"] = value
             with self.assertRaisesRegex(ValueError, "finite"):
                 validate_ohlcv_15m(raw, assets=("BTC", "ETH"), as_of=pd.Timestamp("2026-01-01 01:00Z"))
+
+    def test_validation_rejects_numeric_string_ohlcv(self):
+        raw = tiny_raw()
+        raw["close"] = raw["close"].astype(object)
+        raw.loc[0, "close"] = "100.0"
+        with self.assertRaisesRegex(ValueError, "finite"):
+            validate_ohlcv_15m(raw, assets=("BTC", "ETH"), as_of=pd.Timestamp("2026-01-01 01:00Z"))

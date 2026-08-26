@@ -43,13 +43,15 @@ def validate_ohlcv_15m(raw, assets=REQUIRED_ASSETS, as_of=None):
     if frame.groupby("asset").size().lt(MIN_HISTORY_BARS).any():
         raise ValueError("insufficient history")
     values = frame[["open", "high", "low", "close", "volume"]]
+    if not all(pd.api.types.is_numeric_dtype(values[column]) for column in values):
+        raise ValueError("OHLCV values must be numeric and finite")
     numeric = values.apply(pd.to_numeric, errors="coerce")
     if numeric.isna().any().any() or not np.isfinite(numeric.to_numpy()).all():
         raise ValueError("OHLCV values must be numeric and finite")
-    prices = frame[["open", "high", "low", "close"]]
-    invalid = ((prices <= 0).any(axis=1) | (frame.volume < 0)
-               | (frame.high < prices[["open", "close", "low"]].max(axis=1))
-               | (frame.low > prices[["open", "close", "high"]].min(axis=1)))
+    prices = numeric[["open", "high", "low", "close"]]
+    invalid = ((prices <= 0).any(axis=1) | (numeric.volume < 0)
+               | (numeric.high < prices[["open", "close", "low"]].max(axis=1))
+               | (numeric.low > prices[["open", "close", "high"]].min(axis=1)))
     if invalid.any():
         raise ValueError("invalid OHLC or volume")
     as_of = pd.Timestamp.now(tz="UTC") if as_of is None else pd.Timestamp(as_of)
