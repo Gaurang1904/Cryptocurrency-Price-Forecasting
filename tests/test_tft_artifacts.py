@@ -136,11 +136,23 @@ class TftArtifactTests(unittest.TestCase):
             root = Path(tmp).resolve()
             out = populate_run(root)
             metadata = complete_metadata() | {
-                "data_path": str(Path(external).resolve() / "ohlcv.parquet")
+                "data_path": Path(external).resolve() / "ohlcv.parquet"
             }
-            with self.assertRaises(ValueError):
+            with self.assertRaisesRegex(ValueError, "provenance root"):
                 finalize_tft_run(out, metadata, provenance_root=root)
             self.assertFalse((out / "metadata.json").exists())
+
+    def test_native_absolute_metadata_paths_are_made_portable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            data_path = root / "data" / "inside.parquet"
+            data_path.parent.mkdir()
+            data_path.write_bytes(b"source")
+            out = populate_run(root)
+            metadata = complete_metadata() | {"data_path": data_path}
+            finalize_tft_run(out, metadata, provenance_root=root)
+            saved = json.loads((out / "metadata.json").read_text())
+            self.assertEqual(saved["data_path"], "data/inside.parquet")
 
     def test_relative_metadata_paths_are_canonical_and_contained(self):
         with tempfile.TemporaryDirectory() as tmp:
