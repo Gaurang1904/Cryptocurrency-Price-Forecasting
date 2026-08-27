@@ -19,9 +19,11 @@ SHARED = ["fold", "y", "last", "rv", "regime_driver"]
 _RUN_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 
 
-def default_run_dir(tag, data_end, run_id, root=Path("artifacts/evaluation")):
+def default_run_dir(
+    tag, data_end, run_id, root=Path("artifacts/evaluation"), pipeline="daily"
+):
     stamp = pd.Timestamp(data_end).strftime("%Y%m%d")
-    return Path(root) / f"daily-{tag}-{stamp}-{run_id}"
+    return Path(root) / f"{pipeline}-{tag}-{stamp}-{run_id}"
 
 
 def _validated_run_id(run_id):
@@ -38,11 +40,19 @@ def _validated_run_id(run_id):
     return run_id
 
 
-def reserve_run_dir(tag, data_end, run_id=None, root=Path("artifacts/evaluation")):
+def reserve_run_dir(
+    tag,
+    data_end,
+    run_id=None,
+    root=Path("artifacts/evaluation"),
+    pipeline="daily",
+):
     """Atomically reserve an empty, contained run directory before fitting."""
     run_id = _validated_run_id(run_id)
     root = Path(root).resolve()
-    output_dir = default_run_dir(tag, data_end, run_id, root).resolve()
+    output_dir = default_run_dir(
+        tag, data_end, run_id, root, pipeline=pipeline
+    ).resolve()
     try:
         output_dir.relative_to(root)
     except ValueError:

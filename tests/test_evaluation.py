@@ -42,6 +42,14 @@ def comparable_frame(model="xgb", horizons=(1, 2)):
 
 
 class PredictionValidationTests(unittest.TestCase):
+    def test_run_directory_pipeline_prefix_defaults_to_daily(self):
+        path = default_run_dir("tree", "2026-07-23", "abc", root="out")
+        self.assertEqual(path.as_posix(), "out/daily-tree-20260723-abc")
+        hf = default_run_dir(
+            "tft", "2026-07-31", "abc", root="out", pipeline="hf15m"
+        )
+        self.assertEqual(hf.as_posix(), "out/hf15m-tft-20260731-abc")
+
     def test_run_directory_contains_pipeline_and_data_cutoff(self):
         got = default_run_dir(
             "tree", pd.Timestamp("2026-07-23", tz="UTC"), "baseline", Path("out")
