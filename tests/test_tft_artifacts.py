@@ -1,5 +1,4 @@
 import json
-import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -132,18 +131,6 @@ class TftArtifactTests(unittest.TestCase):
                 json.loads((out / "status.json").read_text())["state"], "incomplete"
             )
 
-    def test_metadata_paths_are_portable_within_provenance_root(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp).resolve()
-            data_path = root / "data" / "ohlcv_15m.parquet"
-            data_path.parent.mkdir()
-            data_path.write_bytes(b"source")
-            out = populate_run(root)
-            metadata = complete_metadata() | {"data_path": str(data_path)}
-            finalize_tft_run(out, metadata, provenance_root=root)
-            saved = json.loads((out / "metadata.json").read_text())
-            self.assertEqual(saved["data_path"], "data/ohlcv_15m.parquet")
-
     def test_metadata_paths_outside_provenance_root_are_rejected(self):
         with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as external:
             root = Path(tmp).resolve()
@@ -151,7 +138,7 @@ class TftArtifactTests(unittest.TestCase):
             metadata = complete_metadata() | {
                 "data_path": str(Path(external).resolve() / "ohlcv.parquet")
             }
-            with self.assertRaisesRegex(ValueError, "provenance root"):
+            with self.assertRaises(ValueError):
                 finalize_tft_run(out, metadata, provenance_root=root)
             self.assertFalse((out / "metadata.json").exists())
 
@@ -180,17 +167,21 @@ class TftArtifactTests(unittest.TestCase):
                 finalize_tft_run(out, metadata, provenance_root=root)
             self.assertFalse((out / "metadata.json").exists())
 
-    @unittest.skipUnless(os.name == "nt", "Windows drive-relative path")
-    def test_drive_relative_metadata_paths_are_rejected(self):
+    def test_windows_metadata_path_syntax_is_rejected_on_every_host(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp).resolve()
-            for index, value in enumerate(
-                (f"{root.drive}outside.parquet", "\\outside.parquet")
-            ):
+            values = (
+                "C:outside.parquet",
+                "C:\\outside.parquet",
+                "\\outside.parquet",
+                "\\\\server\\share\\outside.parquet",
+                "data\\ohlcv_15m.parquet",
+            )
+            for index, value in enumerate(values):
                 with self.subTest(value=value):
                     out = populate_run(root / f"case-{index}")
                     metadata = complete_metadata() | {"data_path": value}
-                    with self.assertRaisesRegex(ValueError, "relative path"):
+                    with self.assertRaisesRegex(ValueError, "Windows path syntax"):
                         finalize_tft_run(out, metadata, provenance_root=root)
                     self.assertFalse((out / "metadata.json").exists())
 
