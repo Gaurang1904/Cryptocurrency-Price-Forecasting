@@ -1,7 +1,7 @@
 import hashlib
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from uuid import uuid4
 
 from crypto.evaluation import reserve_run_dir
@@ -87,20 +87,37 @@ def _provenance_relative(path, provenance_root):
         ) from None
 
 
-def _portable_metadata(value, provenance_root):
+def _is_path_key(key):
+    return isinstance(key, str) and (
+        key in {"path", "paths"} or key.endswith(("_path", "_paths"))
+    )
+
+
+def _portable_path(value, provenance_root):
+    path = Path(value)
+    if path.anchor and not path.is_absolute():
+        raise ValueError(f"metadata path is not a fully relative path: {value}")
+    resolved = path if path.is_absolute() else provenance_root / path
+    return _provenance_relative(resolved, provenance_root)
+
+
+def _portable_metadata(value, provenance_root, path_value=False):
     if isinstance(value, dict):
         return {
-            key: _portable_metadata(item, provenance_root)
+            key: _portable_metadata(
+                item, provenance_root, path_value=_is_path_key(key)
+            )
             for key, item in value.items()
         }
     if isinstance(value, (list, tuple)):
-        return [_portable_metadata(item, provenance_root) for item in value]
+        return [
+            _portable_metadata(item, provenance_root, path_value=path_value)
+            for item in value
+        ]
     if isinstance(value, Path):
-        if value.is_absolute():
-            return _provenance_relative(value, provenance_root)
-        return value.as_posix()
-    if isinstance(value, str) and Path(value).is_absolute():
-        return _provenance_relative(value, provenance_root)
+        return _portable_path(value, provenance_root)
+    if isinstance(value, str) and (path_value or Path(value).is_absolute()):
+        return _portable_path(value, provenance_root)
     return value
 
 
@@ -121,6 +138,30 @@ def _contained_file(path, output_dir):
     if not resolved.is_file():
         raise FileNotFoundError(f"evidence file is missing: {resolved}")
     return relative, resolved
+
+
+def _manifest_file(path, output_dir):
+    if not isinstance(path, str):
+        raise ValueError("manifest path must be a canonical relative POSIX path")
+    posix = PurePosixPath(path)
+    windows = PureWindowsPath(path)
+    if (
+        not path
+        or "\\" in path
+        or posix.is_absolute()
+        or windows.drive
+        or any(part in {"", ".", ".."} for part in path.split("/"))
+        or posix.as_posix() != path
+    ):
+        raise ValueError(
+            f"manifest path must be a canonical relative POSIX path: {path!r}"
+        )
+    resolved = (output_dir / path).resolve()
+    try:
+        resolved.relative_to(output_dir)
+    except ValueError:
+        raise ValueError(f"evidence path is outside run directory: {resolved}") from None
+    return path, resolved
 
 
 def _evidence_files(output_dir):
@@ -207,7 +248,7 @@ def verify_tft_manifest(output_dir):
 
     recorded = {}
     for record in manifest.get("files", []):
-        relative, path = _contained_path(record["path"], output_dir)
+        relative, path = _manifest_file(record["path"], output_dir)
         if relative in recorded:
             raise ValueError(f"duplicate manifest path: {relative}")
         recorded[relative] = (path, record["sha256"])

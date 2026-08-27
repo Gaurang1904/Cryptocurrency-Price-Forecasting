@@ -1,4 +1,5 @@
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -79,7 +80,9 @@ class TftArtifactTests(unittest.TestCase):
             save_tft_core(
                 out, FakeNeuralForecast(), raw_test_frame(), calibrated_test_frame()
             )
-            finalize_tft_run(out, complete_metadata(), extra_paths=[])
+            finalize_tft_run(
+                out, complete_metadata(), extra_paths=[], provenance_root=out.parent
+            )
             verify_tft_manifest(out)
             self.assertEqual(
                 json.loads((out / "status.json").read_text())["state"], "complete"
@@ -152,6 +155,45 @@ class TftArtifactTests(unittest.TestCase):
                 finalize_tft_run(out, metadata, provenance_root=root)
             self.assertFalse((out / "metadata.json").exists())
 
+    def test_relative_metadata_paths_are_canonical_and_contained(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            out = populate_run(root)
+            metadata = complete_metadata() | {
+                "data_path": "data/ohlcv_15m.parquet",
+                "config": {
+                    "horizon": 96,
+                    "cache_path": "cache/staging/../models",
+                },
+            }
+            finalize_tft_run(out, metadata, provenance_root=root)
+            saved = json.loads((out / "metadata.json").read_text())
+            self.assertEqual(saved["data_path"], "data/ohlcv_15m.parquet")
+            self.assertEqual(saved["config"]["cache_path"], "cache/models")
+
+    def test_relative_metadata_path_traversal_is_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            out = populate_run(root)
+            metadata = complete_metadata() | {"data_path": "../outside.parquet"}
+            with self.assertRaisesRegex(ValueError, "provenance root"):
+                finalize_tft_run(out, metadata, provenance_root=root)
+            self.assertFalse((out / "metadata.json").exists())
+
+    @unittest.skipUnless(os.name == "nt", "Windows drive-relative path")
+    def test_drive_relative_metadata_paths_are_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            for index, value in enumerate(
+                (f"{root.drive}outside.parquet", "\\outside.parquet")
+            ):
+                with self.subTest(value=value):
+                    out = populate_run(root / f"case-{index}")
+                    metadata = complete_metadata() | {"data_path": value}
+                    with self.assertRaisesRegex(ValueError, "relative path"):
+                        finalize_tft_run(out, metadata, provenance_root=root)
+                    self.assertFalse((out / "metadata.json").exists())
+
     def test_manifest_hashes_extra_evidence_files(self):
         with tempfile.TemporaryDirectory() as tmp:
             out = populate_run(Path(tmp))
@@ -159,7 +201,12 @@ class TftArtifactTests(unittest.TestCase):
             graph = out / "forecast.png"
             table.write_text("metric,value\nmae,1\n", encoding="utf-8")
             graph.write_bytes(b"png")
-            finalize_tft_run(out, complete_metadata(), extra_paths=[table, graph])
+            finalize_tft_run(
+                out,
+                complete_metadata(),
+                extra_paths=[table, graph],
+                provenance_root=out.parent,
+            )
             paths = {
                 record["path"]
                 for record in json.loads((out / "manifest.json").read_text())["files"]
@@ -172,17 +219,44 @@ class TftArtifactTests(unittest.TestCase):
             (out / "model" / "status.json").write_text(
                 "checkpoint metadata", encoding="utf-8"
             )
-            finalize_tft_run(out, complete_metadata())
+            finalize_tft_run(out, complete_metadata(), provenance_root=out.parent)
             paths = {
                 record["path"]
                 for record in json.loads((out / "manifest.json").read_text())["files"]
             }
             self.assertIn("model/status.json", paths)
 
+    def test_manifest_rejects_noncanonical_or_nonportable_paths(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            cases = (
+                ("raw_cv.parquet", lambda out: str(out / "raw_cv.parquet")),
+                ("raw_cv.parquet", lambda _out: "./raw_cv.parquet"),
+                ("raw_cv.parquet", lambda _out: "model/../raw_cv.parquet"),
+                ("model/weights.ckpt", lambda _out: "model\\weights.ckpt"),
+                ("model/weights.ckpt", lambda _out: "model//weights.ckpt"),
+                ("model/weights.ckpt", lambda _out: "model/./weights.ckpt"),
+            )
+            for index, (original, replacement) in enumerate(cases):
+                with self.subTest(replacement=replacement):
+                    out = populate_run(root / f"case-{index}")
+                    finalize_tft_run(out, complete_metadata(), provenance_root=root)
+                    manifest_path = out / "manifest.json"
+                    manifest = json.loads(manifest_path.read_text())
+                    record = next(
+                        item for item in manifest["files"] if item["path"] == original
+                    )
+                    record["path"] = replacement(out)
+                    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+                    with self.assertRaisesRegex(
+                        ValueError, "canonical relative POSIX"
+                    ):
+                        verify_tft_manifest(out)
+
     def test_manifest_verification_rejects_changed_evidence(self):
         with tempfile.TemporaryDirectory() as tmp:
             out = populate_run(Path(tmp))
-            finalize_tft_run(out, complete_metadata())
+            finalize_tft_run(out, complete_metadata(), provenance_root=out.parent)
             (out / "raw_cv.parquet").write_bytes(b"changed")
             with self.assertRaisesRegex(ValueError, "hash"):
                 verify_tft_manifest(out)
@@ -190,7 +264,7 @@ class TftArtifactTests(unittest.TestCase):
     def test_manifest_verification_rejects_missing_evidence(self):
         with tempfile.TemporaryDirectory() as tmp:
             out = populate_run(Path(tmp))
-            finalize_tft_run(out, complete_metadata())
+            finalize_tft_run(out, complete_metadata(), provenance_root=out.parent)
             (out / "predictions_raw_test.parquet").unlink()
             with self.assertRaisesRegex(ValueError, "missing"):
                 verify_tft_manifest(out)
@@ -198,7 +272,7 @@ class TftArtifactTests(unittest.TestCase):
     def test_manifest_verification_rejects_extra_evidence(self):
         with tempfile.TemporaryDirectory() as tmp:
             out = populate_run(Path(tmp))
-            finalize_tft_run(out, complete_metadata())
+            finalize_tft_run(out, complete_metadata(), provenance_root=out.parent)
             (out / "unrecorded.txt").write_text("extra", encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "extra"):
                 verify_tft_manifest(out)
