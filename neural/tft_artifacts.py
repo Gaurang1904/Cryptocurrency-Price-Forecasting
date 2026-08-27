@@ -96,7 +96,7 @@ def _is_path_key(key):
 def _portable_path(value, provenance_root):
     path = Path(value)
     serialized = str(value)
-    if not (isinstance(value, Path) and path.is_absolute()) and (
+    if not path.is_absolute() and (
         "\\" in serialized or PureWindowsPath(serialized).drive
     ):
         raise ValueError(f"metadata path uses Windows path syntax: {value}")

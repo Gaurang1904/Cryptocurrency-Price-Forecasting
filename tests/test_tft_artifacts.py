@@ -134,13 +134,14 @@ class TftArtifactTests(unittest.TestCase):
     def test_metadata_paths_outside_provenance_root_are_rejected(self):
         with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as external:
             root = Path(tmp).resolve()
-            out = populate_run(root)
-            metadata = complete_metadata() | {
-                "data_path": Path(external).resolve() / "ohlcv.parquet"
-            }
-            with self.assertRaisesRegex(ValueError, "provenance root"):
-                finalize_tft_run(out, metadata, provenance_root=root)
-            self.assertFalse((out / "metadata.json").exists())
+            external_path = Path(external).resolve() / "ohlcv.parquet"
+            for index, value in enumerate((external_path, str(external_path))):
+                with self.subTest(value_type=type(value).__name__):
+                    out = populate_run(root / f"case-{index}")
+                    metadata = complete_metadata() | {"data_path": value}
+                    with self.assertRaisesRegex(ValueError, "provenance root"):
+                        finalize_tft_run(out, metadata, provenance_root=root)
+                    self.assertFalse((out / "metadata.json").exists())
 
     def test_native_absolute_metadata_paths_are_made_portable(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -150,6 +151,18 @@ class TftArtifactTests(unittest.TestCase):
             data_path.write_bytes(b"source")
             out = populate_run(root)
             metadata = complete_metadata() | {"data_path": data_path}
+            finalize_tft_run(out, metadata, provenance_root=root)
+            saved = json.loads((out / "metadata.json").read_text())
+            self.assertEqual(saved["data_path"], "data/inside.parquet")
+
+    def test_native_absolute_metadata_path_strings_are_made_portable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            data_path = root / "data" / "inside.parquet"
+            data_path.parent.mkdir()
+            data_path.write_bytes(b"source")
+            out = populate_run(root)
+            metadata = complete_metadata() | {"data_path": str(data_path)}
             finalize_tft_run(out, metadata, provenance_root=root)
             saved = json.loads((out / "metadata.json").read_text())
             self.assertEqual(saved["data_path"], "data/inside.parquet")
@@ -179,16 +192,17 @@ class TftArtifactTests(unittest.TestCase):
                 finalize_tft_run(out, metadata, provenance_root=root)
             self.assertFalse((out / "metadata.json").exists())
 
-    def test_windows_metadata_path_syntax_is_rejected_on_every_host(self):
+    def test_non_native_windows_metadata_path_syntax_is_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp).resolve()
-            values = (
+            windows_values = (
                 "C:outside.parquet",
                 "C:\\outside.parquet",
                 "\\outside.parquet",
                 "\\\\server\\share\\outside.parquet",
                 "data\\ohlcv_15m.parquet",
             )
+            values = [value for value in windows_values if not Path(value).is_absolute()]
             for index, value in enumerate(values):
                 with self.subTest(value=value):
                     out = populate_run(root / f"case-{index}")
