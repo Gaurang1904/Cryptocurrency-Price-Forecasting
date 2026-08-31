@@ -183,6 +183,6 @@ what the data actually does:
   Binance serves ~30 days. Do not delete it; back it up outside the repo.
 - Coverage runs ~1-2pp light on some models (78-79 vs 80). Fixable with a widening
   factor; not applied yet.
-- The 15-minute N-HiTS/TFT experiments use only 16 test origins, so their exact
+- The legacy 2-hour 15-minute N-HiTS/TFT experiments use only 16 test origins, so their exact
   coverage and directional metrics are not strong enough for resume claims.
 - Daily plots are lightweight SVG; high-frequency diagnostics use matplotlib PNGs.

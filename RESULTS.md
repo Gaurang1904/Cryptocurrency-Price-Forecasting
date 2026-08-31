@@ -120,7 +120,7 @@ LSTM 2-hour forecast with 80% interval:
 ## Honest caveats
 
 - 15-min coverage/DirAcc come from only 16 test origins — thin. The direction
-  finding is robust (confirmed by TFT and the scaled LSTM); the exact coverage % is not.
+  finding is configuration- and window-sensitive, not robust; the exact coverage % is also not robust.
 - 0.27% MAPE at a 2-hour horizon is low mostly because price barely moves over 2
   hours — it is honest, but close to a naive-lag baseline. It is not evidence of edge.
 - This is a research finding, not a trading system. No live P&L is claimed.
