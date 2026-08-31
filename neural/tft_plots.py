@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 
 from neural.tft_evaluation import apply_regimes, fit_regime_cutpoints, tft_metric_tables
+from neural.tft_evaluation import validate_tft_forecasts
 
 
 BASELINES = {"persistence_vol", "momentum_vol"}
@@ -59,6 +60,7 @@ def _forecast_path(_, test, output_dir):
         ax.fill_between(group.h, group.q10, group.q90, color="#0072B2", alpha=0.20,
                         label="calibrated TFT q10–q90")
         ax.set(xlabel="15-minute horizon", ylabel="price", title=f"{asset}: latest test origin {latest:%Y-%m-%d}")
+        _title(ax, f"{asset}: latest test origin {latest:%Y-%m-%d}", test)
         ax.legend(fontsize="small")
         ax.grid(axis="y", alpha=0.25)
     fig.suptitle(_caption(test), y=1.02)
@@ -79,6 +81,7 @@ def _next_day_forecasts(_, test, output_dir):
             ax.plot(prediction.origin, prediction.q50, color=color, linestyle=style, marker=marker,
                     markersize=4, linewidth=1.5, label=f"{model} q50")
         ax.set(ylabel="next-day price", title=asset)
+        _title(ax, asset, test)
         ax.legend(fontsize="x-small", ncol=2)
         ax.grid(axis="y", alpha=0.25)
     axes[-1, 0].set_xlabel("test origin")
@@ -180,6 +183,11 @@ def _validate_report_inputs(calibration, test):
         raise ValueError("raw and calibrated TFT models are required")
     if set(calibration.split) != {"calibration"}:
         raise ValueError("calibration rows must use the calibration split")
+    if calibration.origin.max() >= test.origin.min():
+        raise ValueError("calibration origins must precede test origins")
+    expected_horizons = tuple(range(1, 97))
+    validate_tft_forecasts(calibration, expected_horizons)
+    validate_tft_forecasts(test, expected_horizons)
 
 
 def render_tft_report(calibration, test, output_dir):

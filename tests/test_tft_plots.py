@@ -1,9 +1,11 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import matplotlib.pyplot as plt
 import pandas as pd
+from matplotlib.figure import Figure
 
 from neural.tft_evaluation import make_tft_baselines
 from neural.tft_plots import render_tft_report
@@ -60,3 +62,63 @@ class TftPlotTests(unittest.TestCase):
                 render_tft_report(
                     calibration, test[test.model.str.startswith("tft")], Path(tmp),
                 )
+
+    def test_report_rejects_overlapping_calibration_origins_before_writing_outputs(self):
+        calibration, test = report_fixture()
+        overlap = test.loc[test.origin.eq(test.origin.min())].assign(split="calibration")
+        calibration = pd.concat([calibration, overlap], ignore_index=True)
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp)
+            with self.assertRaisesRegex(ValueError, "precede"):
+                render_tft_report(calibration, test, output_dir)
+            self.assertEqual([], list(output_dir.iterdir()))
+
+    def test_report_rejects_missing_calibrated_asset_before_writing_outputs(self):
+        calibration, test = report_fixture()
+        test = test.loc[
+            ~((test.model == "tft_calibrated") & (test.asset == "ETH"))
+        ].copy()
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp)
+            with self.assertRaisesRegex(ValueError, "identical forecast key sets"):
+                render_tft_report(calibration, test, output_dir)
+            self.assertEqual([], list(output_dir.iterdir()))
+
+    def test_report_rejects_incomplete_latest_calibrated_path_before_writing_outputs(self):
+        calibration, test = report_fixture()
+        latest = test.origin.max()
+        test = test.loc[
+            ~(
+                (test.model == "tft_calibrated")
+                & (test.asset == "ETH")
+                & test.origin.eq(latest)
+                & test.h.eq(96)
+            )
+        ].copy()
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp)
+            with self.assertRaisesRegex(ValueError, "complete horizons"):
+                render_tft_report(calibration, test, output_dir)
+            self.assertEqual([], list(output_dir.iterdir()))
+
+    def test_every_visible_chart_title_includes_test_caption(self):
+        calibration, test = report_fixture()
+        caption = (
+            "Test split | OOS 2025-01-03 to 2025-01-06 "
+            "| 4 distinct daily origins"
+        )
+        titles = []
+        original_savefig = Figure.savefig
+
+        def savefig_with_titles(figure, *args, **kwargs):
+            figure_titles = [axis.get_title() for axis in figure.axes if axis.get_title()]
+            if figure._suptitle is not None:
+                figure_titles.append(figure._suptitle.get_text())
+            titles.extend(figure_titles)
+            return original_savefig(figure, *args, **kwargs)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(Figure, "savefig", new=savefig_with_titles):
+                render_tft_report(calibration, test, Path(tmp))
+        self.assertEqual(10, len(titles))
+        self.assertTrue(all(caption in title for title in titles))
