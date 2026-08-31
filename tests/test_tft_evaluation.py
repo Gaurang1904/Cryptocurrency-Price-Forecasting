@@ -111,6 +111,28 @@ class TftForecastFrameTests(unittest.TestCase):
         self.assertEqual(set(calibration.split), {"calibration"})
         self.assertEqual(set(test.split), {"test"})
 
+    def test_split_rejects_an_ineligible_scheduled_calibration_origin(self):
+        frame, scheduled = forecast_fixture(origins=366, horizons=2, assets=("BTC",))
+        required = scheduled[-365:]
+        eligible = scheduled.delete(1)
+        self.assertIn(scheduled[0], set(eligible))
+        self.assertNotIn(required[0], set(eligible))
+        with self.assertRaisesRegex(ValueError, "ineligible scheduled origins"):
+            split_calibration_test(
+                frame, eligible, n_calibration=219, n_test=146,
+            )
+
+    def test_split_rejects_an_ineligible_scheduled_test_origin(self):
+        frame, scheduled = forecast_fixture(origins=366, horizons=2, assets=("BTC",))
+        required = scheduled[-365:]
+        eligible = scheduled.delete(220)
+        self.assertIn(required[0], set(eligible))
+        self.assertNotIn(required[219], set(eligible))
+        with self.assertRaisesRegex(ValueError, "ineligible scheduled origins"):
+            split_calibration_test(
+                frame, eligible, n_calibration=219, n_test=146,
+            )
+
     def test_baselines_preserve_keys_truth_and_quantile_order(self):
         reference, _ = forecast_fixture(origins=4, horizons=3)
         baselines = make_tft_baselines(reference)

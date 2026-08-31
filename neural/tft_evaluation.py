@@ -127,14 +127,25 @@ def validate_tft_forecasts(frame, expected_horizons):
 
 
 def split_calibration_test(frame, eligible_origins, n_calibration=219, n_test=146):
-    ordered = pd.DatetimeIndex(sorted(set(eligible_origins)))
     required = n_calibration + n_test
-    if len(ordered) < required:
-        raise ValueError(f"need {required} eligible daily origins, found {len(ordered)}")
-    selected = ordered[-required:]
+    scheduled = pd.DatetimeIndex(pd.to_datetime(frame.origin.unique(), utc=True)).sort_values()
+    if len(scheduled) < required:
+        raise ValueError(f"need {required} scheduled daily origins, found {len(scheduled)}")
+    selected = scheduled[-required:]
+    eligible = pd.DatetimeIndex(pd.to_datetime(eligible_origins, utc=True)).unique()
+    ineligible = selected.difference(eligible)
+    if len(ineligible):
+        raise ValueError(
+            f"{len(ineligible)} ineligible scheduled origins; need exactly "
+            f"{n_calibration} calibration and {n_test} test origins"
+        )
     cal_origins, test_origins = selected[:n_calibration], selected[n_calibration:]
     calibration = frame[frame.origin.isin(cal_origins)].copy()
     test = frame[frame.origin.isin(test_origins)].copy()
+    if calibration.origin.nunique() != n_calibration or test.origin.nunique() != n_test:
+        raise ValueError(
+            f"need exactly {n_calibration} calibration and {n_test} test origins"
+        )
     calibration["split"], test["split"] = "calibration", "test"
     if test.origin.nunique() < 100:
         raise ValueError("fewer than 100 valid test origins")

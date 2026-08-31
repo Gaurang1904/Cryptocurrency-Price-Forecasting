@@ -47,7 +47,6 @@ def validate_ohlcv_15m(raw, assets=REQUIRED_ASSETS, as_of=None):
         raise ValueError("timestamps must be timezone-aware UTC")
     if ((frame.date.dt.minute % 15 != 0) | (frame.date.dt.second != 0) | (frame.date.dt.microsecond != 0)).any():
         raise ValueError("timestamps must be 15-minute aligned")
-        raise ValueError("timestamps must be timezone-aware UTC")
     if not all(g.date.is_monotonic_increasing for _, g in frame.groupby("asset")):
         raise ValueError("timestamps must be sorted within asset")
     if frame.groupby("asset").size().lt(MIN_HISTORY_BARS).any():

@@ -1,6 +1,7 @@
 import json
 import tempfile
 import unittest
+from types import SimpleNamespace
 from pathlib import Path
 from unittest.mock import call, patch
 
@@ -10,7 +11,7 @@ import torch
 
 REAL_READ_PARQUET = pd.read_parquet
 
-from neural.tft_runner import TFTExperimentConfig, build_tft, run_tft
+from neural.tft_runner import TFTExperimentConfig, build_metadata, build_tft, run_tft
 from tests.test_tft_evaluation import cv_fixture
 
 
@@ -182,9 +183,9 @@ class TftRunnerTests(unittest.TestCase):
     def test_runner_splits_only_the_eligible_daily_origins(self, _, __):
         FakeNF.cv_origins = 366
         eligible = pd.date_range(
-            "2025-01-02", periods=365, freq="D", tz="UTC",
+            "2025-01-02", periods=366, freq="D", tz="UTC",
         )
-        synthetic_origin = pd.Timestamp("2026-01-02", tz="UTC")
+        synthetic_origin = pd.Timestamp("2025-01-02", tz="UTC")
         with tempfile.TemporaryDirectory() as tmp, patch(
             "neural.tft_runner.eligible_daily_origins", return_value=eligible,
         ) as origins, patch(
@@ -221,6 +222,28 @@ class TftRunnerTests(unittest.TestCase):
         self.assertEqual(config.output_root, Path("runs"))
         self.assertEqual(config.accelerator, "gpu")
         self.assertEqual(config.batch_size, 16)
+
+    @patch("neural.tft_runner._git_commit", return_value="fixture")
+    @patch("neural.tft_runner.version", return_value="fixture")
+    def test_metadata_train_and_validation_boundaries_are_exact(self, _, __):
+        calibration_origin = pd.Timestamp("2026-01-31 00:00", tz="UTC")
+        metadata = build_metadata(
+            TFTExperimentConfig(run_id="fixture"),
+            SimpleNamespace(
+                model_frame=pd.DataFrame({"ds": [pd.Timestamp("2024-01-01")]}),
+                data_end=pd.Timestamp("2026-02-01", tz="UTC"), gap_stats={},
+            ),
+            pd.DataFrame({"origin": [calibration_origin]}),
+            pd.DataFrame({"origin": [calibration_origin + pd.Timedelta(days=219)]}),
+            elapsed_seconds=1.0,
+        )
+        validation_end = calibration_origin - pd.Timedelta("15min")
+        validation_start = validation_end - pd.Timedelta(minutes=15 * 2687)
+        self.assertEqual(pd.Timestamp(metadata["validation_end"]), validation_end)
+        self.assertEqual(pd.Timestamp(metadata["validation_start"]), validation_start)
+        self.assertEqual(
+            pd.Timestamp(metadata["train_end"]), validation_start - pd.Timedelta("15min"),
+        )
 
     def test_cli_rejects_tft_options_for_other_models(self):
         from neural.nf_run import main

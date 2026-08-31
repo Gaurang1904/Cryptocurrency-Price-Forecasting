@@ -130,7 +130,7 @@ def build_metadata(config, prepared, calibration, raw_test, elapsed_seconds):
         "features": list(HIST_EXOG),
         "future_features": list(FUTR_EXOG),
         "config": _metadata_config(config),
-        "train_end": _timestamp(validation_end),
+        "train_end": _timestamp(validation_start - pd.Timedelta("15min")),
         "validation_start": _timestamp(validation_start),
         "validation_end": _timestamp(validation_end),
         "calibration_start": _timestamp(calibration.origin.min()),

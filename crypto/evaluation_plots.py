@@ -113,4 +113,3 @@ def render_bundle(frame, output_dir):
         tables["by_regime"], "regime", "Normalized pinball loss by regime", frame,
         output_dir, "performance_by_regime.png",
     )
-
