@@ -54,11 +54,14 @@ a cause, and is not validated evidence of post-selection generalization.
 
 ---
 
-## 15-min high-frequency — 2-hour forecast (~1M rows, 16 test origins)
+## Legacy 2-hour experiment — 15-min high-frequency (~1M rows, 16 test origins)
 
-The table records the initial comparison (1,000 steps, 96-bar lookback); current
-code defaults to 4,000 steps and a 192-bar lookback and therefore requires a fresh
-run before its outputs can replace this table. MAPE is the median
+The table records the prior two-hour TFT comparison (1,000 steps, 96-bar
+lookback); current code defaults to 4,000 steps and a 192-bar lookback and
+therefore requires a fresh run before its outputs can replace this table. These
+legacy two-hour results are **not comparable** to the new next-day TFT
+configuration (672-bar lookback, 96-bar/24-hour path, fixed-model 365-origin
+evaluation). MAPE is the median
 forecast error; DirAcc is up/down accuracy on the 2-hour move; R² is on **returns**
 (price-R² would be a meaningless ~0.99).
 
@@ -73,6 +76,17 @@ forecast error; DirAcc is up/down accuracy on the 2-hour move; R² is on **retur
 trending test window and range from 48.8% to 66.2% across architectures. A scaled
 LSTM run dropped to 52.5%, showing that the apparent result was configuration- and
 window-sensitive rather than stable evidence of directional edge.
+
+---
+
+## Next-day TFT: pending user run
+
+The next-day TFT uses 15-minute inputs, a 672-bar (7-day) lookback, and a 96-bar
+(24-hour) forecast path. It is a single fixed-model evaluation with 365 daily
+origins: 219 calibration origins followed by 146 untouched test origins. The user
+must run the full GPU training and validate the resulting manifest before any
+next-day TFT metrics can be reported here. No forecast performance values are
+available yet, and this phase includes no buy/sell system or P&L claim.
 
 ---
 

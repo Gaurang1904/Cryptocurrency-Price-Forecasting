@@ -113,6 +113,41 @@ Change the coin universe in `crypto/data.py` (`ASSETS`), then re-fetch and retra
 
 ---
 
+## Next-day TFT experiment
+
+This is a separate, user-operated research experiment for an intraday **next-day
+price path**. It uses 15-minute inputs, a 672-bar (7-day) lookback, and forecasts
+the next 96 bars (24 hours). One fixed global TFT is trained once, then evaluated
+at 365 daily origins: the first 219 origins are reserved for interval calibration
+and the final 146 are an untouched chronological test set. The full 96-step path
+is retained; step 96 is the next-day headline horizon.
+
+Full training is intentionally the user's responsibility. From this worktree,
+run the following PowerShell command with a safe, unique run identifier:
+
+```powershell
+python -m neural.nf_run --model tft --run-id <safe-run-id> --output-root artifacts/evaluation --accelerator gpu --batch-size 16
+```
+
+TFT is GPU-memory intensive. `--batch-size 16` is the starting GPU setting; if it
+runs out of memory, lower the batch size and rerun with a new safe run ID. This
+changes operational memory use, not the defined 15-minute/672-bar/96-bar forecast
+configuration.
+
+A successful run is written beneath
+`artifacts/evaluation/hf15m-tft-YYYYMMDD-<safe-run-id>/`. It contains the saved
+model checkpoint, `raw_cv.parquet`, raw and calibrated test predictions,
+`metadata.json`, four metric CSVs, six report PNGs, and `manifest.json` with
+SHA-256 hashes for the evidence files. Treat the run as complete only when
+`status.json` contains `{"state": "complete"}` and the manifest verifies; an
+incomplete or failed run is not evidence for performance claims.
+
+This phase provides no buy/sell decisions, trading system, or P&L claim. Do not
+quote next-day TFT metrics until the user-run artifacts have passed manifest
+validation.
+
+---
+
 ## The model
 
 ```
