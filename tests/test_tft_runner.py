@@ -2,11 +2,13 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import call, patch
 
 import numpy as np
 import pandas as pd
 import torch
+
+REAL_READ_PARQUET = pd.read_parquet
 
 from neural.tft_runner import TFTExperimentConfig, build_tft, run_tft
 from tests.test_tft_evaluation import cv_fixture
@@ -29,6 +31,7 @@ def fixture_parquet_loader(path, columns=None):
 
 class FakeNF:
     instances = []
+    cv_origins = 365
 
     def __init__(self, models, freq):
         self.models = models
@@ -39,7 +42,9 @@ class FakeNF:
 
     def cross_validation(self, frame, **kwargs):
         self.cross_validation_calls.append((frame, kwargs))
-        return cv_fixture(origins=365, horizons=96, assets=("BTC", "ETH"))[0]
+        return cv_fixture(
+            origins=self.cv_origins, horizons=96, assets=("BTC", "ETH"),
+        )[0]
 
     def save(self, path, save_dataset=True, overwrite=False):
         self.saved = True
@@ -51,6 +56,50 @@ class FakeNF:
 class TftRunnerTests(unittest.TestCase):
     def setUp(self):
         FakeNF.instances.clear()
+        FakeNF.cv_origins = 365
+
+    def test_model_construction_uses_fixed_daily_quantiles_and_exogenous_features(self):
+        config = TFTExperimentConfig(run_id="fixture")
+        loss, valid_loss = object(), object()
+        with patch("neural.tft_runner.MQLoss", side_effect=[loss, valid_loss]) as mq_loss, patch(
+            "neural.tft_runner.TFT"
+        ) as tft:
+            model = build_tft(config)
+
+        self.assertIs(model, tft.return_value)
+        self.assertEqual(
+            mq_loss.call_args_list,
+            [
+                call(quantiles=[0.1, 0.5, 0.9]),
+                call(quantiles=[0.1, 0.5, 0.9]),
+            ],
+        )
+        self.assertEqual(tft.call_args.args, ())
+        self.assertEqual(
+            tft.call_args.kwargs,
+            {
+                "h": 96,
+                "input_size": 672,
+                "hist_exog_list": [
+                    "log_return", "abs_return", "range_pct", "log_volume",
+                    "log_volume_change", "rv_96", "rv_672", "momentum_96",
+                    "momentum_672", "volume_z96", "missing_bar",
+                ],
+                "futr_exog_list": ["tod_sin", "tod_cos", "dow_sin", "dow_cos"],
+                "hidden_size": 128,
+                "loss": loss,
+                "valid_loss": valid_loss,
+                "scaler_type": "robust",
+                "max_steps": 4000,
+                "early_stop_patience_steps": 5,
+                "val_check_steps": 100,
+                "batch_size": 32,
+                "random_seed": 42,
+                "accelerator": "auto",
+                "enable_progress_bar": True,
+                "logger": False,
+            },
+        )
 
     def test_model_construction_is_seeded_before_tft_initialization(self):
         config = TFTExperimentConfig(run_id="fixture", assets=("BTC", "ETH"))
@@ -103,6 +152,60 @@ class TftRunnerTests(unittest.TestCase):
             failure = json.loads((output_dir / "failure.json").read_text())
             self.assertEqual(failure["error_type"], "ValueError")
             self.assertEqual(failure["message"], "bad source")
+
+    @patch("neural.tft_runner.pd.read_parquet", side_effect=fixture_parquet_loader)
+    def test_runner_persists_raw_cv_before_forecast_conversion_failure(self, _):
+        with tempfile.TemporaryDirectory() as tmp, patch(
+            "neural.tft_runner.to_tft_forecasts",
+            side_effect=RuntimeError("conversion failed"),
+        ):
+            config = TFTExperimentConfig(
+                run_id="post-cv-failure", output_root=Path(tmp), assets=("BTC", "ETH"),
+            )
+            with self.assertRaisesRegex(RuntimeError, "conversion failed"):
+                run_tft(config, nf_class=FakeNF)
+
+            output_dir = next(Path(tmp).iterdir())
+            self.assertTrue((output_dir / "raw_cv.parquet").is_file())
+            self.assertEqual(len(FakeNF.instances[-1].cross_validation_calls), 1)
+            self.assertEqual(
+                json.loads((output_dir / "status.json").read_text())["state"],
+                "incomplete",
+            )
+            self.assertEqual(
+                json.loads((output_dir / "failure.json").read_text()),
+                {"error_type": "RuntimeError", "message": "conversion failed"},
+            )
+
+    @patch("neural.tft_runner.render_tft_report", return_value=[])
+    @patch("neural.tft_runner.pd.read_parquet", side_effect=fixture_parquet_loader)
+    def test_runner_splits_only_the_eligible_daily_origins(self, _, __):
+        FakeNF.cv_origins = 366
+        eligible = pd.date_range(
+            "2025-01-02", periods=365, freq="D", tz="UTC",
+        )
+        synthetic_origin = pd.Timestamp("2026-01-02", tz="UTC")
+        with tempfile.TemporaryDirectory() as tmp, patch(
+            "neural.tft_runner.eligible_daily_origins", return_value=eligible,
+        ) as origins, patch(
+            "neural.tft_runner.split_calibration_test",
+            wraps=__import__("neural.tft_runner", fromlist=["split_calibration_test"]).split_calibration_test,
+        ) as split:
+            config = TFTExperimentConfig(
+                run_id="eligible-only", output_root=Path(tmp), assets=("BTC", "ETH"),
+                max_steps=1,
+            )
+            output_dir = run_tft(config, nf_class=FakeNF)
+            raw_test_origins = set(pd.to_datetime(
+                REAL_READ_PARQUET(output_dir / "predictions_raw_test.parquet")["origin"], utc=True,
+            ))
+
+        origins.assert_called_once()
+        self.assertEqual(origins.call_args.args[1], 96)
+        split.assert_called_once()
+        pd.testing.assert_index_equal(split.call_args.args[1], eligible)
+        self.assertEqual(split.call_args.args[2:], (219, 146))
+        self.assertNotIn(synthetic_origin, raw_test_origins)
 
     def test_cli_forwards_operational_tft_options(self):
         from neural.nf_run import main
