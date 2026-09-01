@@ -9,6 +9,8 @@ from crypto.evaluation import metric_tables, validate_predictions
 
 
 BASELINE = "vol_21d"
+FORECAST_HORIZON = 7
+FORECAST_MODELS = ("lstm", "dlinear", "tree_blend", "xgb", BASELINE, "lgbm")
 
 
 def require_volatility_baseline(frame):
@@ -36,20 +38,34 @@ def _title(ax, label, frame):
 
 
 def _forecast_bands(frame, output_dir):
-    asset = frame.asset.iloc[0]
-    h = int(frame.h.min())
-    rows = frame[(frame.asset == asset) & (frame.h == h)].sort_values("origin")
-    fig, ax = plt.subplots(figsize=(9, 4))
-    actual = rows.drop_duplicates("origin")
-    ax.plot(actual.origin, actual.y, color="black", linewidth=1.5, label="actual")
-    for model, group in rows.groupby("model", sort=False):
-        style = "--" if model == BASELINE else "-"
-        ax.plot(group.origin, group.q50, linestyle=style, label=f"{model} median")
-        ax.fill_between(group.origin, group.q10, group.q90, alpha=0.12)
-    ax.set_ylabel("price")
-    ax.legend(fontsize="small", ncol=2)
-    _title(ax, f"{asset} {h}-day forecast bands", frame)
-    _save(fig, output_dir, "forecast_bands.png")
+    if FORECAST_HORIZON not in set(frame.h):
+        raise ValueError("forecast bands require the 7-day horizon")
+    if set(frame.model) != set(FORECAST_MODELS):
+        raise ValueError(
+            "forecast bands require the six daily models: "
+            f"{', '.join(FORECAST_MODELS)}"
+        )
+    h = FORECAST_HORIZON
+    models = FORECAST_MODELS
+    for asset in sorted(frame.asset.unique()):
+        rows = frame[(frame.asset == asset) & (frame.h == h)].sort_values("origin")
+        actual = rows.drop_duplicates("origin")
+        fig, axes = plt.subplots(2, 3, figsize=(14, 7), sharex=True, sharey=True)
+        for ax, model in zip(axes.ravel(), models):
+            group = rows[rows.model == model]
+            ax.plot(actual.origin, actual.y, color="black", linewidth=1.2,
+                    label="actual")
+            line, = ax.plot(group.origin, group.q50, label="median")
+            ax.fill_between(group.origin, group.q10, group.q90,
+                            color=line.get_color(), alpha=0.18, label="q10-q90")
+            ax.set_title(model.replace("_", " "))
+            ax.legend(fontsize="x-small")
+        for ax in axes.ravel()[len(models):]:
+            ax.set_visible(False)
+        fig.supxlabel("forecast origin")
+        fig.supylabel("price")
+        fig.suptitle(f"{asset} {h}-day forecast bands\n{_caption(rows)}")
+        _save(fig, output_dir, f"forecast_bands_{asset.lower()}.png")
 
 
 def _coverage(frame, output_dir):

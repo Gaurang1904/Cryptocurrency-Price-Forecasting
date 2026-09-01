@@ -3,11 +3,12 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import matplotlib.pyplot as plt
 import pandas as pd
 
-from crypto.evaluation_plots import render_bundle
+from crypto.evaluation_plots import _forecast_bands, render_bundle
 from evaluate import main
 from tests.test_evaluation import valid_frame
 
@@ -16,9 +17,13 @@ def evaluation_frame():
     base = valid_frame()
     origins = pd.date_range("2025-01-01", periods=3, freq="D", tz="UTC")
     rows = []
-    for model, sigma in (("vol_21d", 0.02), ("xgb", 0.018)):
+    models = (
+        ("lstm", 0.017), ("dlinear", 0.0175), ("tree_blend", 0.018),
+        ("xgb", 0.0185), ("vol_21d", 0.02), ("lgbm", 0.019),
+    )
+    for model, sigma in models:
         for i, origin in enumerate(origins):
-            for h in (1, 2):
+            for h in range(1, 8):
                 rows.append(base.assign(
                     model=model, asset="BTC" if i < 2 else "ETH", origin=origin,
                     fold=pd.Timestamp("2025-01-01", tz="UTC"), h=h,
@@ -30,13 +35,61 @@ def evaluation_frame():
     return pd.concat(rows, ignore_index=True)
 
 
+def forecast_panel_frame():
+    base = valid_frame()
+    origins = pd.date_range("2024-01-01", periods=289, freq="7D", tz="UTC")
+    rows = []
+    for offset, model in enumerate(
+        ("lstm", "dlinear", "tree_blend", "xgb", "vol_21d", "lgbm")
+    ):
+        for i, origin in enumerate(origins):
+            price = 100.0 + i * 0.1
+            rows.append(base.assign(
+                model=model, asset="BTC", origin=origin,
+                fold=pd.Timestamp("2024-01-01", tz="UTC"), h=7,
+                y=price + 1, last=price, sigma=0.02, rv=0.018,
+                regime_driver=0.02, q10=price - 5 - offset * 0.1,
+                q50=price + 0.5 + offset * 0.1,
+                q90=price + 5 + offset * 0.1,
+            ))
+    return pd.concat(rows, ignore_index=True)
+
+
 class EvaluationPlotTests(unittest.TestCase):
+    def test_forecast_bands_requires_seven_day_horizon(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(ValueError, "7-day horizon"):
+                _forecast_bands(forecast_panel_frame().assign(h=6), Path(tmp))
+
+    def test_forecast_bands_requires_all_six_models(self):
+        frame = forecast_panel_frame()
+        frame = frame[frame.model != "dlinear"]
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(ValueError, "six daily models"):
+                _forecast_bands(frame, Path(tmp))
+
+    def test_forecast_bands_has_six_panels_and_asset_caption(self):
+        figures = []
+        with patch("crypto.evaluation_plots._save",
+                   side_effect=lambda fig, *_: figures.append(fig)):
+            _forecast_bands(forecast_panel_frame(), Path("unused"))
+        self.assertEqual(1, len(figures))
+        fig = figures[0]
+        self.assertEqual(
+            {"lstm", "dlinear", "tree blend", "xgb", "vol 21d", "lgbm"},
+            {ax.get_title() for ax in fig.axes},
+        )
+        self.assertIn("BTC 7-day forecast bands", fig._suptitle.get_text())
+        self.assertIn("289 origins", fig._suptitle.get_text())
+        plt.close(fig)
+
     def test_render_bundle_creates_all_expected_charts_and_closes_figures(self):
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp)
             render_bundle(evaluation_frame(), out)
             self.assertEqual({
-                "forecast_bands.png", "coverage_by_horizon.png",
+                "forecast_bands_btc.png", "forecast_bands_eth.png",
+                "coverage_by_horizon.png",
                 "pinball_by_model.png", "volatility_fit.png",
                 "performance_by_asset.png", "performance_by_regime.png",
             }, {path.name for path in out.glob("*.png")})
@@ -55,13 +108,16 @@ class EvaluationPlotTests(unittest.TestCase):
             neural_dir.mkdir()
             tree_predictions = tree_dir / "predictions.parquet"
             neural_predictions = neural_dir / "predictions.parquet"
-            tree_frame = evaluation_frame()
-            neural_frame = tree_frame[tree_frame.model == "xgb"].assign(model="lstm")
+            frame = evaluation_frame()
+            tree_frame = frame[frame.model.isin(
+                ["vol_21d", "xgb", "lgbm", "tree_blend"]
+            )]
+            neural_frame = frame[frame.model.isin(["lstm", "dlinear"])]
             tree_frame.to_parquet(tree_predictions, index=False)
             neural_frame.to_parquet(neural_predictions, index=False)
             metadata = {
                 "pipeline": "daily", "data_end": "2025-01-10 00:00:00+00:00",
-                "horizons": 2, "folds": 1, "origins": 3,
+                "horizons": 7, "folds": 1, "origins": 3,
             }
             (tree_dir / "metadata.json").write_text(json.dumps(metadata | {
                 "family": "tree", "features": ["vol_21d"],
@@ -86,7 +142,8 @@ class EvaluationPlotTests(unittest.TestCase):
                 "metrics_by_regime.csv",
             }
             pngs = {
-                "forecast_bands.png", "coverage_by_horizon.png",
+                "forecast_bands_btc.png", "forecast_bands_eth.png",
+                "coverage_by_horizon.png",
                 "pinball_by_model.png", "volatility_fit.png",
                 "performance_by_asset.png", "performance_by_regime.png",
             }
@@ -110,9 +167,11 @@ class EvaluationPlotTests(unittest.TestCase):
                 "folds": ["2025-01-01T00:00:00+00:00"],
                 "fold_count": 1,
                 "distinct_origins": 3,
-                "row_count": 18,
-                "models": ["lstm", "vol_21d", "xgb"],
-                "horizons": [1, 2],
+                "row_count": 126,
+                "models": [
+                    "dlinear", "lgbm", "lstm", "tree_blend", "vol_21d", "xgb",
+                ],
+                "horizons": [1, 2, 3, 4, 5, 6, 7],
             })
             self.assertEqual(
                 {Path(item["path"]).name for item in manifest["inputs"]},
@@ -208,13 +267,19 @@ class EvaluationPlotTests(unittest.TestCase):
             neural_dir.mkdir()
             tree_predictions = tree_dir / "predictions.parquet"
             neural_predictions = neural_dir / "predictions.parquet"
-            tree_frame = evaluation_frame()
-            neural_frame = tree_frame[tree_frame.model == "xgb"].assign(model="lstm").iloc[:-2]
+            frame = evaluation_frame()
+            tree_frame = frame[frame.model.isin(
+                ["vol_21d", "xgb", "lgbm", "tree_blend"]
+            )]
+            neural_frame = frame[
+                frame.model.isin(["lstm", "dlinear"])
+                & frame.origin.ne(frame.origin.max())
+            ]
             tree_frame.to_parquet(tree_predictions, index=False)
             neural_frame.to_parquet(neural_predictions, index=False)
             metadata = {
                 "pipeline": "daily", "data_end": "2025-01-10 00:00:00+00:00",
-                "horizons": 2, "folds": 1, "origins": 3,
+                "horizons": 7, "folds": 1, "origins": 3,
             }
             (tree_dir / "metadata.json").write_text(json.dumps(metadata | {"family": "tree"}))
             (neural_dir / "metadata.json").write_text(json.dumps(metadata | {

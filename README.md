@@ -293,9 +293,31 @@ not from in-sample fitted values.
 
 ![Pinball loss by model](docs/evaluation/daily-20260723-finalfix-legacy-20260826-a2/pinball_by_model.png)
 
-### Forecast intervals
+### Seven-day forecast intervals by asset
 
-![Calibrated forecast bands](docs/evaluation/daily-20260723-finalfix-legacy-20260826-a2/forecast_bands.png)
+Each figure separates the six completed daily models into individual panels so
+their median forecasts and q10-q90 intervals do not cover one another. Every
+asset figure contains 289 historical out-of-sample origins.
+
+#### BTC
+
+![BTC seven-day forecast bands](docs/evaluation/daily-20260723-coin-panels-20260901-a2/forecast_bands_btc.png)
+
+#### ETH
+
+![ETH seven-day forecast bands](docs/evaluation/daily-20260723-coin-panels-20260901-a2/forecast_bands_eth.png)
+
+#### BNB
+
+![BNB seven-day forecast bands](docs/evaluation/daily-20260723-coin-panels-20260901-a2/forecast_bands_bnb.png)
+
+#### SOL
+
+![SOL seven-day forecast bands](docs/evaluation/daily-20260723-coin-panels-20260901-a2/forecast_bands_sol.png)
+
+#### XRP
+
+![XRP seven-day forecast bands](docs/evaluation/daily-20260723-coin-panels-20260901-a2/forecast_bands_xrp.png)
 
 ### Calibration by horizon
 

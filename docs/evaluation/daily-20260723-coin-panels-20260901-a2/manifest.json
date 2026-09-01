@@ -1,0 +1,386 @@
+{
+  "manifest_version": 1,
+  "hash_algorithm": "sha256",
+  "provenance": {
+    "root": ".",
+    "path_format": "provenance-root-relative-posix"
+  },
+  "evaluation": {
+    "data_cutoff": "2026-07-23T00:00:00+00:00",
+    "oos_start": "2021-01-01T00:00:00+00:00",
+    "oos_end": "2026-07-14T00:00:00+00:00",
+    "folds": [
+      "2021-01-01T00:00:00+00:00",
+      "2022-01-01T00:00:00+00:00",
+      "2023-01-01T00:00:00+00:00",
+      "2024-01-01T00:00:00+00:00",
+      "2025-01-01T00:00:00+00:00",
+      "2026-01-01T00:00:00+00:00"
+    ],
+    "fold_count": 6,
+    "distinct_origins": 1445,
+    "row_count": 60690,
+    "models": [
+      "dlinear",
+      "lgbm",
+      "lstm",
+      "tree_blend",
+      "vol_21d",
+      "xgb"
+    ],
+    "horizons": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ]
+  },
+  "inputs": [
+    {
+      "path": "artifacts/evaluation/daily-tree-20260723-finalfix-legacy-20260826-a2/predictions.parquet",
+      "sha256": "661bd6b6fb1e8e71a19a05cd0fb33d150871d20b5d5bb3deb5a740eb14f17149",
+      "metadata": {
+        "pipeline": "daily",
+        "family": "tree",
+        "data_end": "2026-07-23 00:00:00+00:00",
+        "horizons": 7,
+        "folds": 6,
+        "origins": 1445,
+        "features": [
+          "ret_lag1",
+          "ret_lag2",
+          "ret_lag3",
+          "ret_lag5",
+          "ret_lag8",
+          "ret_lag13",
+          "ret_5d",
+          "vol_5d",
+          "ret_10d",
+          "vol_10d",
+          "ret_21d",
+          "vol_21d",
+          "ret_63d",
+          "vol_63d",
+          "range",
+          "range_5d",
+          "vol_ratio",
+          "px_vs_ma63",
+          "btc_ret",
+          "btc_ret_5d",
+          "funding_sum",
+          "fund_7d",
+          "fund_21d",
+          "fund_z"
+        ],
+        "run_id": "finalfix-legacy-20260826-a2",
+        "output_dir": ".worktrees/daily-prediction-quality/artifacts/evaluation/daily-tree-20260723-finalfix-legacy-20260826-a2",
+        "blend_weights": [
+          {
+            "fold": "2021-01-01 00:00:00+00:00",
+            "h": 1,
+            "weight": 1.0
+          },
+          {
+            "fold": "2021-01-01 00:00:00+00:00",
+            "h": 2,
+            "weight": 1.0
+          },
+          {
+            "fold": "2021-01-01 00:00:00+00:00",
+            "h": 3,
+            "weight": 1.0
+          },
+          {
+            "fold": "2021-01-01 00:00:00+00:00",
+            "h": 4,
+            "weight": 0.25
+          },
+          {
+            "fold": "2021-01-01 00:00:00+00:00",
+            "h": 5,
+            "weight": 0.0
+          },
+          {
+            "fold": "2021-01-01 00:00:00+00:00",
+            "h": 6,
+            "weight": 0.0
+          },
+          {
+            "fold": "2021-01-01 00:00:00+00:00",
+            "h": 7,
+            "weight": 0.7000000000000001
+          },
+          {
+            "fold": "2022-01-01 00:00:00+00:00",
+            "h": 1,
+            "weight": 1.0
+          },
+          {
+            "fold": "2022-01-01 00:00:00+00:00",
+            "h": 2,
+            "weight": 1.0
+          },
+          {
+            "fold": "2022-01-01 00:00:00+00:00",
+            "h": 3,
+            "weight": 1.0
+          },
+          {
+            "fold": "2022-01-01 00:00:00+00:00",
+            "h": 4,
+            "weight": 1.0
+          },
+          {
+            "fold": "2022-01-01 00:00:00+00:00",
+            "h": 5,
+            "weight": 1.0
+          },
+          {
+            "fold": "2022-01-01 00:00:00+00:00",
+            "h": 6,
+            "weight": 1.0
+          },
+          {
+            "fold": "2022-01-01 00:00:00+00:00",
+            "h": 7,
+            "weight": 0.0
+          },
+          {
+            "fold": "2023-01-01 00:00:00+00:00",
+            "h": 1,
+            "weight": 1.0
+          },
+          {
+            "fold": "2023-01-01 00:00:00+00:00",
+            "h": 2,
+            "weight": 1.0
+          },
+          {
+            "fold": "2023-01-01 00:00:00+00:00",
+            "h": 3,
+            "weight": 1.0
+          },
+          {
+            "fold": "2023-01-01 00:00:00+00:00",
+            "h": 4,
+            "weight": 1.0
+          },
+          {
+            "fold": "2023-01-01 00:00:00+00:00",
+            "h": 5,
+            "weight": 0.6000000000000001
+          },
+          {
+            "fold": "2023-01-01 00:00:00+00:00",
+            "h": 6,
+            "weight": 1.0
+          },
+          {
+            "fold": "2023-01-01 00:00:00+00:00",
+            "h": 7,
+            "weight": 1.0
+          },
+          {
+            "fold": "2024-01-01 00:00:00+00:00",
+            "h": 1,
+            "weight": 1.0
+          },
+          {
+            "fold": "2024-01-01 00:00:00+00:00",
+            "h": 2,
+            "weight": 1.0
+          },
+          {
+            "fold": "2024-01-01 00:00:00+00:00",
+            "h": 3,
+            "weight": 1.0
+          },
+          {
+            "fold": "2024-01-01 00:00:00+00:00",
+            "h": 4,
+            "weight": 1.0
+          },
+          {
+            "fold": "2024-01-01 00:00:00+00:00",
+            "h": 5,
+            "weight": 1.0
+          },
+          {
+            "fold": "2024-01-01 00:00:00+00:00",
+            "h": 6,
+            "weight": 1.0
+          },
+          {
+            "fold": "2024-01-01 00:00:00+00:00",
+            "h": 7,
+            "weight": 1.0
+          },
+          {
+            "fold": "2025-01-01 00:00:00+00:00",
+            "h": 1,
+            "weight": 1.0
+          },
+          {
+            "fold": "2025-01-01 00:00:00+00:00",
+            "h": 2,
+            "weight": 1.0
+          },
+          {
+            "fold": "2025-01-01 00:00:00+00:00",
+            "h": 3,
+            "weight": 1.0
+          },
+          {
+            "fold": "2025-01-01 00:00:00+00:00",
+            "h": 4,
+            "weight": 0.8
+          },
+          {
+            "fold": "2025-01-01 00:00:00+00:00",
+            "h": 5,
+            "weight": 1.0
+          },
+          {
+            "fold": "2025-01-01 00:00:00+00:00",
+            "h": 6,
+            "weight": 1.0
+          },
+          {
+            "fold": "2025-01-01 00:00:00+00:00",
+            "h": 7,
+            "weight": 1.0
+          },
+          {
+            "fold": "2026-01-01 00:00:00+00:00",
+            "h": 1,
+            "weight": 1.0
+          },
+          {
+            "fold": "2026-01-01 00:00:00+00:00",
+            "h": 2,
+            "weight": 0.8500000000000001
+          },
+          {
+            "fold": "2026-01-01 00:00:00+00:00",
+            "h": 3,
+            "weight": 0.9500000000000001
+          },
+          {
+            "fold": "2026-01-01 00:00:00+00:00",
+            "h": 4,
+            "weight": 0.8
+          },
+          {
+            "fold": "2026-01-01 00:00:00+00:00",
+            "h": 5,
+            "weight": 0.8
+          },
+          {
+            "fold": "2026-01-01 00:00:00+00:00",
+            "h": 6,
+            "weight": 0.4
+          },
+          {
+            "fold": "2026-01-01 00:00:00+00:00",
+            "h": 7,
+            "weight": 0.75
+          }
+        ]
+      },
+      "metadata_path": "artifacts/evaluation/daily-tree-20260723-finalfix-legacy-20260826-a2/metadata.json",
+      "metadata_sha256": "c0e4487b32f8b3e5ca0954907ad31e1cbabbd9f09957f9d2133eba8b1ea6b9c9"
+    },
+    {
+      "path": "artifacts/evaluation/daily-neural-20260723-finalfix-20260826-a1/predictions.parquet",
+      "sha256": "15d4fec41937ec0bdcaae4f3173e648127627c928adff4cf785c2ef49ac2825f",
+      "metadata": {
+        "pipeline": "daily",
+        "family": "neural",
+        "data_end": "2026-07-23 00:00:00+00:00",
+        "horizons": 7,
+        "folds": 6,
+        "origins": 1445,
+        "models": [
+          "dlinear",
+          "lstm"
+        ],
+        "lookback": 30,
+        "channels": [
+          "r",
+          "ar",
+          "rng",
+          "dv"
+        ],
+        "run_id": "finalfix-20260826-a1",
+        "output_dir": ".worktrees/daily-prediction-quality/artifacts/evaluation/daily-neural-20260723-finalfix-20260826-a1"
+      },
+      "metadata_path": "artifacts/evaluation/daily-neural-20260723-finalfix-20260826-a1/metadata.json",
+      "metadata_sha256": "e54901aa9bb34c6ef8aab064660c79ed4edce3b464a7655b3ba80268bcb81035"
+    }
+  ],
+  "outputs": [
+    {
+      "path": "docs/evaluation/daily-20260723-coin-panels-20260901-a2/coverage_by_horizon.png",
+      "sha256": "b1cbed7d8a592f2af72228e3a9e5181529780a1054d97ec7c10d05bcfbf70e27"
+    },
+    {
+      "path": "docs/evaluation/daily-20260723-coin-panels-20260901-a2/forecast_bands_bnb.png",
+      "sha256": "dd90b6de72db148feeced119dd7c4326842f0c15705434b20a53dfb0cc575b1d"
+    },
+    {
+      "path": "docs/evaluation/daily-20260723-coin-panels-20260901-a2/forecast_bands_btc.png",
+      "sha256": "467f40063585dfaf20b1e98f45d36b230edf12fadb7a9746c93ec7f13fb49341"
+    },
+    {
+      "path": "docs/evaluation/daily-20260723-coin-panels-20260901-a2/forecast_bands_eth.png",
+      "sha256": "00f8dd2d9674789308f9c3efc7561f3194c675028b442027f6cd256aa7249d34"
+    },
+    {
+      "path": "docs/evaluation/daily-20260723-coin-panels-20260901-a2/forecast_bands_sol.png",
+      "sha256": "967a3919ade05fc4623901cd103d93df322201966c96935413944c57907b38bc"
+    },
+    {
+      "path": "docs/evaluation/daily-20260723-coin-panels-20260901-a2/forecast_bands_xrp.png",
+      "sha256": "9fbe258cc298e5ae85afaf16d288204c52daf1f2257e409600838e100bb01e1d"
+    },
+    {
+      "path": "docs/evaluation/daily-20260723-coin-panels-20260901-a2/metrics_by_asset.csv",
+      "sha256": "438edd9c9d10e63e6f52bd1073764c9722b5af479131c8c67b1997e3fac8cab9"
+    },
+    {
+      "path": "docs/evaluation/daily-20260723-coin-panels-20260901-a2/metrics_by_fold.csv",
+      "sha256": "8d3c67781aee0aeb0d98e61a50be367f98de0824a511ac78627d8fd51a3a1a4c"
+    },
+    {
+      "path": "docs/evaluation/daily-20260723-coin-panels-20260901-a2/metrics_by_horizon.csv",
+      "sha256": "9c407fee8b14ca68b9e0c18090eaa45f58dbac427c1f39519f3dafbb221df1f6"
+    },
+    {
+      "path": "docs/evaluation/daily-20260723-coin-panels-20260901-a2/metrics_by_regime.csv",
+      "sha256": "8d0131952c976c3935521f0b099b7ef4eccde9f0923cc4c8256c9008b8e5c0ec"
+    },
+    {
+      "path": "docs/evaluation/daily-20260723-coin-panels-20260901-a2/metrics_overall.csv",
+      "sha256": "9a834bea7bb6459f5735045a5eedbe73b2bd341a1c9e19ea22ff2f0e8ef79f0c"
+    },
+    {
+      "path": "docs/evaluation/daily-20260723-coin-panels-20260901-a2/performance_by_asset.png",
+      "sha256": "1b4d7390b52fa50cb1941f6bb9d6ffbf85eeaa0b8e296f17cfb00256a7d9d676"
+    },
+    {
+      "path": "docs/evaluation/daily-20260723-coin-panels-20260901-a2/performance_by_regime.png",
+      "sha256": "f9c5b7556ab06ba05a1a6f9451ab8e9294317c039b23d4c8e3676c940ed6bd02"
+    },
+    {
+      "path": "docs/evaluation/daily-20260723-coin-panels-20260901-a2/pinball_by_model.png",
+      "sha256": "bbdc49c4bda1ff5042e398332dc36c51e4a573636f33ced68e0283ce35f88a42"
+    },
+    {
+      "path": "docs/evaluation/daily-20260723-coin-panels-20260901-a2/volatility_fit.png",
+      "sha256": "2b5447e90294da73e390838f20844c31fb48a58a51c8e519f7619c399788bd94"
+    }
+  ]
+}
