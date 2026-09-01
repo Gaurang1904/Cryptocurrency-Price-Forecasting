@@ -44,7 +44,15 @@ def gru():
 
 
 def nhits():
-    return NHITS(**COMMON, n_pool_kernel_size=[4, 2, 1], n_freq_downsample=[8, 4, 1])
+    return NHITS(
+        **COMMON,
+        n_pool_kernel_size=[4, 2, 1],
+        n_freq_downsample=[8, 4, 1],
+        batch_size=4,
+        valid_batch_size=4,
+        windows_batch_size=128,
+        inference_windows_batch_size=128,
+    )
 
 
 BUILDERS = {"lstm": lstm, "gru": gru, "nhits": nhits}
